@@ -82,9 +82,9 @@ All configuration is via environment variables (see `.env.example`):
 
 ## Volumes
 
-| Volume   | Container       | Purpose                                                                  |
-|----------|-----------------|--------------------------------------------------------------------------|
-| `pgdata` | db (PostgreSQL) | Database storage — all domains, records, scan history, and user accounts |
+| Volume   | Container       | Mount Path                 | Purpose                                                                  |
+|----------|-----------------|----------------------------|--------------------------------------------------------------------------|
+| `pgdata` | db (PostgreSQL) | `/var/lib/postgresql/data`  | Database storage — all domains, records, scan history, and user accounts |
 
 The `pgdata` volume persists across container restarts and rebuilds. To manage it:
 
