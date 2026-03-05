@@ -224,6 +224,13 @@ const App = {
       const el = document.getElementById('dashboard-content');
       if (!el) return;
 
+      if (data.total_domains === 0) {
+        const isAdmin = this.user?.role === 'admin';
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">&#127760;</div><h3>No domains configured</h3><p>Add your first domain to start monitoring DNS records.</p>
+          ${isAdmin ? '<button class="btn-primary" onclick="App.navigate(\'domains\')">Go to Domains</button>' : '<p>Ask an admin to add domains.</p>'}</div>`;
+        return;
+      }
+
       let html = `<div class="card-grid">
         <div class="stat-card card"><div class="stat-value">${data.total_domains}</div><div class="stat-label">Domains Monitored</div></div>
         <div class="stat-card card"><div class="stat-value" style="color:var(--status-alive)">${data.alive_records}</div><div class="stat-label">Alive Records</div></div>
