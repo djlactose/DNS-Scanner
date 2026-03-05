@@ -32,25 +32,19 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 | **worker** | Node.js 22 | Background scan scheduler |
 | **nginx** | Nginx Alpine | Reverse proxy, security headers, rate limiting |
 | **db** | PostgreSQL 16 | Primary data store |
-| **pgbouncer** | PgBouncer | Connection pooling |
 | **redis** | Redis 7 | Distributed locks, scan coordination |
 
 ## Quick Start
 
-### 1. Clone and configure
+### 1. Start the application
 
 ```bash
-cp .env.example .env
-# Edit .env with strong passwords and secrets
+./start.sh
 ```
 
-### 2. Start with Docker Compose
+This will auto-generate a `.env` file with random passwords and secrets on first run, then start all containers. To customize settings, edit `.env` before running (see `.env.example` for all options).
 
-```bash
-docker-compose up -d --build
-```
-
-### 3. Access the app
+### 2. Access the app
 
 Open `http://localhost:8082` in your browser.
 
@@ -62,10 +56,10 @@ All configuration is via environment variables (see `.env.example`):
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DB_PASSWORD` | Yes | - | PostgreSQL password |
-| `SESSION_SECRET` | Yes | - | Session encryption key (min 32 chars) |
-| `ENCRYPTION_KEY` | Yes | - | SMTP credential encryption key (min 32 chars) |
-| `REDIS_PASSWORD` | Yes | - | Redis password |
+| `DB_PASSWORD` | Yes | *auto-generated* | PostgreSQL password |
+| `SESSION_SECRET` | Yes | *auto-generated* | Session encryption key (min 32 chars) |
+| `ENCRYPTION_KEY` | Yes | *auto-generated* | SMTP credential encryption key (min 32 chars) |
+| `REDIS_PASSWORD` | Yes | *auto-generated* | Redis password |
 | `REGISTRATION_ENABLED` | No | `true` | Allow new user registration |
 | `ALLOW_PRIVATE_RANGES` | No | `false` | Allow scanning private IP ranges |
 | `MAX_DOMAINS` | No | `50` | Maximum domains per instance |
@@ -85,6 +79,27 @@ All configuration is via environment variables (see `.env.example`):
 - Redis password-protected
 - Internal services not exposed to host network
 - Rate limiting on login, registration, scan triggers, and general API
+
+## Volumes
+
+| Volume   | Container       | Purpose                                                                  |
+|----------|-----------------|--------------------------------------------------------------------------|
+| `pgdata` | db (PostgreSQL) | Database storage — all domains, records, scan history, and user accounts |
+
+The `pgdata` volume persists across container restarts and rebuilds. To manage it:
+
+```bash
+# Back up the database
+docker-compose exec db pg_dump -U dnsscanner dnsscanner > backup.sql
+
+# Restore from backup
+docker-compose exec -T db psql -U dnsscanner dnsscanner < backup.sql
+
+# Reset all data (destructive — removes everything)
+docker-compose down -v
+```
+
+Redis is used only for ephemeral locks and coordination, so it does not require a persistent volume.
 
 ## How "Dead" Is Determined
 
