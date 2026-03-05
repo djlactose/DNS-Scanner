@@ -33,6 +33,7 @@ function validateEnv() {
 }
 
 // ─── Security headers ───
+app.set('trust proxy', 1); // Trust first proxy (nginx)
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -138,10 +139,17 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
       const user = result.rows[0];
       await client.query('INSERT INTO notification_settings (user_id) VALUES ($1)', [user.id]);
       await client.query('COMMIT');
-      req.session.userId = user.id;
-      req.session.role = user.role;
-      console.log(`[AUTH] User registered: ${username} (${role})`);
-      res.status(201).json({ id: user.id, username: user.username, role: user.role });
+      // Regenerate session to prevent fixation, then save to ensure cookie is sent
+      req.session.regenerate((err) => {
+        if (err) return res.status(500).json({ error: 'Session error' });
+        req.session.userId = user.id;
+        req.session.role = user.role;
+        req.session.save((saveErr) => {
+          if (saveErr) return res.status(500).json({ error: 'Session save error' });
+          console.log(`[AUTH] User registered: ${username} (${role})`);
+          res.status(201).json({ id: user.id, username: user.username, role: user.role });
+        });
+      });
     } catch (innerErr) {
       await client.query('ROLLBACK');
       throw innerErr;
@@ -182,8 +190,11 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       if (err) return res.status(500).json({ error: 'Session error' });
       req.session.userId = user.id;
       req.session.role = user.role;
-      console.log(`[AUTH] Login: ${username}`);
-      res.json(userData);
+      req.session.save((saveErr) => {
+        if (saveErr) return res.status(500).json({ error: 'Session save error' });
+        console.log(`[AUTH] Login: ${username}`);
+        res.json(userData);
+      });
     });
   } catch (err) {
     console.error('[AUTH] Login error:', err.message);
