@@ -62,8 +62,6 @@ services:
   app:
     build: .
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/app/docker/entrypoint.sh"]
-    command: ["node", "server.js"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -102,7 +100,6 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/app/docker/entrypoint.sh"]
     command: ["node", "worker.js"]
     environment:
       DB_HOST: db

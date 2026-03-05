@@ -3,6 +3,7 @@ set -e
 
 SECRETS_ENV="/secrets/.env"
 
+# Source secrets from file if it exists (written by init container)
 if [ -f "$SECRETS_ENV" ]; then
     while IFS='=' read -r key value; do
         [ -z "$key" ] && continue
@@ -13,5 +14,15 @@ if [ -f "$SECRETS_ENV" ]; then
         fi
     done < "$SECRETS_ENV"
 fi
+
+# Generate any missing secrets (standalone mode without init container)
+gen_secret() {
+    tr -dc 'a-f0-9' < /dev/urandom | head -c 64
+}
+
+[ -z "$(printenv DB_PASSWORD 2>/dev/null || true)" ] && export DB_PASSWORD=$(gen_secret)
+[ -z "$(printenv REDIS_PASSWORD 2>/dev/null || true)" ] && export REDIS_PASSWORD=$(gen_secret)
+[ -z "$(printenv SESSION_SECRET 2>/dev/null || true)" ] && export SESSION_SECRET=$(gen_secret)
+[ -z "$(printenv ENCRYPTION_KEY 2>/dev/null || true)" ] && export ENCRYPTION_KEY=$(gen_secret)
 
 exec "$@"

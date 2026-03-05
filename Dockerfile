@@ -14,4 +14,5 @@ USER node
 
 EXPOSE 8080
 
+ENTRYPOINT ["/bin/sh", "/app/docker/entrypoint.sh"]
 CMD ["node", "server.js"]
