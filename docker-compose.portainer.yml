@@ -130,7 +130,17 @@ services:
 
 volumes:
   pgdata:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/dnsscanner/pgdata
   secrets:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /srv/dnsscanner/secrets
 
 networks:
   internal:
