@@ -1,6 +1,11 @@
 services:
   init:
     image: alpine:3.19
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     entrypoint:
       - /bin/sh
       - -c
@@ -8,7 +13,8 @@ services:
         if [ -f /secrets/.env ]; then echo "[init] Secrets exist."; exit 0; fi
         echo "[init] Generating secrets..."
         gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64; }
-        DB_PASSWORD=$$(gen); REDIS_PASSWORD=$$(gen); SESSION_SECRET=$$(gen); ENCRYPTION_KEY=$$(gen)
+        DB_PASSWORD=$${DB_PASSWORD:-$$(gen)}; REDIS_PASSWORD=$${REDIS_PASSWORD:-$$(gen)}
+        SESSION_SECRET=$${SESSION_SECRET:-$$(gen)}; ENCRYPTION_KEY=$${ENCRYPTION_KEY:-$$(gen)}
         printf 'DB_PASSWORD=%s\nREDIS_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$DB_PASSWORD" "$$REDIS_PASSWORD" "$$SESSION_SECRET" "$$ENCRYPTION_KEY" > /secrets/.env
         printf '%s' "$$DB_PASSWORD" > /secrets/db_password
         printf '%s' "$$REDIS_PASSWORD" > /secrets/redis_password
@@ -24,8 +30,8 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dnsscanner
-      POSTGRES_USER: dnsscanner
+      POSTGRES_DB: ${DB_NAME:-dnsscanner}
+      POSTGRES_USER: ${DB_USER:-dnsscanner}
       POSTGRES_PASSWORD_FILE: /secrets/db_password
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -36,7 +42,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dnsscanner"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dnsscanner}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -65,19 +71,19 @@ services:
     image: djlactose/dnsscaner:latest
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
     environment:
       DB_HOST: db
       DB_PORT: "5432"
-      DB_NAME: dnsscanner
-      DB_USER: dnsscanner
+      DB_NAME: ${DB_NAME:-dnsscanner}
+      DB_USER: ${DB_USER:-dnsscanner}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       PORT: "8080"
       NODE_ENV: production
-      REGISTRATION_ENABLED: "true"
-      ALLOW_PRIVATE_RANGES: "false"
-      MAX_DOMAINS: "50"
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
+      MAX_DOMAINS: ${MAX_DOMAINS:-50}
     volumes:
       - secrets:/secrets:ro
     depends_on:
@@ -106,12 +112,12 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: "5432"
-      DB_NAME: dnsscanner
-      DB_USER: dnsscanner
+      DB_NAME: ${DB_NAME:-dnsscanner}
+      DB_USER: ${DB_USER:-dnsscanner}
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       NODE_ENV: production
-      ALLOW_PRIVATE_RANGES: "false"
+      ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
     volumes:
       - secrets:/secrets:ro
     depends_on:
@@ -134,13 +140,13 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /srv/dnsscanner/pgdata
+      device: ${DATA_PATH:-/srv/dnsscanner}/pgdata
   secrets:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /srv/dnsscanner/secrets
+      device: ${DATA_PATH:-/srv/dnsscanner}/secrets
 
 networks:
   internal:
