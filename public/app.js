@@ -198,8 +198,8 @@ const App = {
         password: document.getElementById('reg-pass').value,
       }});
       this.connectSSE();
-      this.navigate('dashboard');
-      this.toast(`Welcome! You are ${this.user.role === 'admin' ? 'an admin' : 'a viewer'}.`, 'success');
+      this.navigate(this.user.role === 'admin' ? 'domains' : 'dashboard');
+      this.toast(`Welcome! You are ${this.user.role === 'admin' ? 'an admin — add your first domain below' : 'a viewer'}.`, 'success');
     } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
   },
 
@@ -212,9 +212,13 @@ const App = {
 
   // ─── Dashboard ───
   async renderDashboard() {
+    const isAdmin = this.user?.role === 'admin';
     this.renderLayout(`
       <div class="page-header"><h2>Dashboard</h2>
-        <button class="btn-primary" onclick="App.scanAll()">Scan All Now</button>
+        <div style="display:flex;gap:8px">
+          ${isAdmin ? '<button class="btn-primary" onclick="App.showAddDomain()">+ Add Domain</button>' : ''}
+          <button class="btn-secondary" onclick="App.scanAll()">Scan All Now</button>
+        </div>
       </div>
       <div id="dashboard-content"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>
     `);
@@ -225,9 +229,8 @@ const App = {
       if (!el) return;
 
       if (data.total_domains === 0) {
-        const isAdmin = this.user?.role === 'admin';
         el.innerHTML = `<div class="empty-state"><div class="empty-icon">&#127760;</div><h3>No domains configured</h3><p>Add your first domain to start monitoring DNS records.</p>
-          ${isAdmin ? '<button class="btn-primary" onclick="App.navigate(\'domains\')">Go to Domains</button>' : '<p>Ask an admin to add domains.</p>'}</div>`;
+          ${isAdmin ? '<button class="btn-primary" onclick="App.showAddDomain()">+ Add Domain</button>' : '<p>Ask an admin to add domains.</p>'}</div>`;
         return;
       }
 
