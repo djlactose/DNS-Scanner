@@ -118,25 +118,31 @@ app.post('/api/auth/register', registerLimiter, async (req, res) => {
     const existing = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Username already taken' });
 
-    const userCount = await query('SELECT COUNT(*) as count FROM users');
-    const role = parseInt(userCount.rows[0].count) === 0 ? USER_ROLES.ADMIN : USER_ROLES.VIEWER;
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const result = await query(
-      'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, username, role',
-      [username, email || null, passwordHash, role]
-    );
-    const user = result.rows[0];
-
-    await query(
-      'INSERT INTO notification_settings (user_id) VALUES ($1)',
-      [user.id]
-    );
-
-    req.session.userId = user.id;
-    req.session.role = user.role;
-    console.log(`[AUTH] User registered: ${username} (${role})`);
-    res.status(201).json({ id: user.id, username: user.username, role: user.role });
+    // Use transaction with advisory lock to prevent race condition on first-user admin registration
+    const client = await require('./db').getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(1)'); // serialize first-user check
+      const userCount = await client.query('SELECT COUNT(*) as count FROM users');
+      const role = parseInt(userCount.rows[0].count) === 0 ? USER_ROLES.ADMIN : USER_ROLES.VIEWER;
+      const passwordHash = await bcrypt.hash(password, 12);
+      const result = await client.query(
+        'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, username, role',
+        [username, email || null, passwordHash, role]
+      );
+      const user = result.rows[0];
+      await client.query('INSERT INTO notification_settings (user_id) VALUES ($1)', [user.id]);
+      await client.query('COMMIT');
+      req.session.userId = user.id;
+      req.session.role = user.role;
+      console.log(`[AUTH] User registered: ${username} (${role})`);
+      res.status(201).json({ id: user.id, username: user.username, role: user.role });
+    } catch (innerErr) {
+      await client.query('ROLLBACK');
+      throw innerErr;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     console.error('[AUTH] Registration error:', err.message);
     res.status(500).json({ error: 'Registration failed' });
@@ -166,10 +172,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     }
 
     await query('UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = $1', [user.id]);
-    req.session.userId = user.id;
-    req.session.role = user.role;
-    console.log(`[AUTH] Login: ${username}`);
-    res.json({ id: user.id, username: user.username, role: user.role, email: user.email });
+    const userData = { id: user.id, username: user.username, role: user.role, email: user.email };
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' });
+      req.session.userId = user.id;
+      req.session.role = user.role;
+      console.log(`[AUTH] Login: ${username}`);
+      res.json(userData);
+    });
   } catch (err) {
     console.error('[AUTH] Login error:', err.message);
     res.status(500).json({ error: 'Login failed' });
@@ -237,6 +247,9 @@ app.put('/api/auth/password', requireAuth, async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     const hash = await bcrypt.hash(newPassword, 12);
     await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.session.userId]);
+    // Invalidate other sessions
+    const currentSid = req.sessionID;
+    await query("DELETE FROM session WHERE sid != $1 AND sess::text LIKE $2", [currentSid, `%"userId":${req.session.userId}%`]);
     console.log(`[AUTH] Password changed for user ${req.session.userId}`);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to change password' }); }
@@ -359,7 +372,7 @@ app.post('/api/domains/:id/tags/:tagId', requireAdmin, async (req, res) => {
   try {
     const domainId = parseInt(req.params.id, 10);
     const tagId = parseInt(req.params.tagId, 10);
-    if (!domainId || !tagId) return res.status(400).json({ error: 'Invalid IDs' });
+    if (!Number.isInteger(domainId) || domainId < 1 || !Number.isInteger(tagId) || tagId < 1) return res.status(400).json({ error: 'Invalid IDs' });
     await query('INSERT INTO domain_tags (domain_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [domainId, tagId]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to add tag' }); }
@@ -369,6 +382,7 @@ app.delete('/api/domains/:id/tags/:tagId', requireAdmin, async (req, res) => {
   try {
     const domainId = parseInt(req.params.id, 10);
     const tagId = parseInt(req.params.tagId, 10);
+    if (!Number.isInteger(domainId) || domainId < 1 || !Number.isInteger(tagId) || tagId < 1) return res.status(400).json({ error: 'Invalid IDs' });
     await query('DELETE FROM domain_tags WHERE domain_id = $1 AND tag_id = $2', [domainId, tagId]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to remove tag' }); }
@@ -441,6 +455,7 @@ app.post('/api/scan-all', requireAuth, scanLimiter, async (req, res) => {
     const domains = await query('SELECT * FROM domains WHERE enabled = TRUE');
     const { performScan } = require('./scanner');
     let started = 0;
+    const pending = [];
     for (const domain of domains.rows) {
       const running = await query('SELECT id FROM scans WHERE domain_id = $1 AND status = $2', [domain.id, SCAN_STATUS.RUNNING]);
       if (running.rows.length > 0) continue;
@@ -448,8 +463,18 @@ app.post('/api/scan-all', requireAuth, scanLimiter, async (req, res) => {
         'INSERT INTO scans (domain_id, trigger, triggered_by) VALUES ($1, $2, $3) RETURNING id',
         [domain.id, SCAN_TRIGGER.MANUAL, req.session.userId]
       );
-      performScan(domain, scanResult.rows[0].id).catch(err => console.error(`[SCAN] Error scanning ${domain.domain}:`, err.message));
+      const p = performScan(domain, scanResult.rows[0].id).catch(err => console.error(`[SCAN] Error scanning ${domain.domain}:`, err.message));
+      pending.push(p);
       started++;
+      // Limit concurrency: wait for batch of 5 before starting more
+      if (pending.length >= 5) {
+        await Promise.race(pending);
+        // Remove settled promises
+        for (let i = pending.length - 1; i >= 0; i--) {
+          const settled = await Promise.race([pending[i].then(() => true, () => true), Promise.resolve(false)]);
+          if (settled) pending.splice(i, 1);
+        }
+      }
     }
     broadcastSSE({ type: 'scan_all_started', count: started });
     res.json({ started, total: domains.rows.length });
@@ -561,7 +586,7 @@ app.get('/api/dashboard', requireAuth, async (req, res) => {
       ) hc ON TRUE
       WHERE dr.removed_at IS NULL AND dr.dismissed = FALSE
         AND hc.status IN ('dead', 'takeover_risk')
-        ${domainFilter ? `AND d.id IN (SELECT domain_id FROM domain_tags dt JOIN tags t ON t.id = dt.tag_id WHERE t.name = $${params.length > 0 ? 1 : 0})` : ''}
+        ${domainFilter}
       ORDER BY hc.status = 'takeover_risk' DESC, hc.checked_at DESC
       LIMIT 50
     `, params);
@@ -610,7 +635,7 @@ app.get('/api/domains/:id/export/csv', requireAuth, validateId, async (req, res)
 
     let csv = 'Type,Name,Value,Priority,TTL,Status,Response(ms),First Seen,Last Seen\n';
     for (const r of records.rows) {
-      csv += `${r.record_type},${r.name},"${r.value}",${r.priority || ''},${r.ttl || ''},${r.health_status || 'unknown'},${r.response_ms || ''},${r.first_seen},${r.last_seen}\n`;
+      csv += `${r.record_type},${r.name},"${escapeCsv(r.value)}",${r.priority || ''},${r.ttl || ''},${r.health_status || 'unknown'},${r.response_ms || ''},${r.first_seen},${r.last_seen}\n`;
     }
 
     res.setHeader('Content-Type', 'text/csv');
@@ -677,6 +702,13 @@ app.get('/api/domains/:id/export/report', requireAuth, validateId, async (req, r
     res.send(html);
   } catch (err) { res.status(500).json({ error: 'Report generation failed' }); }
 });
+
+function escapeCsv(val) {
+  if (!val) return '';
+  const s = String(val);
+  if (/^[=+\-@\t\r]/.test(s)) return "'" + s;
+  return s;
+}
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -876,19 +908,22 @@ app.get('/api/events', requireAuth, (req, res) => {
   const clientId = Date.now() + '_' + req.session.userId;
   sseClients.set(clientId, res);
 
-  const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 30000);
-
-  req.on('close', () => {
+  const cleanup = () => {
     clearInterval(heartbeat);
+    clearTimeout(autoDisconnect);
     sseClients.delete(clientId);
-  });
+  };
 
-  // Auto-disconnect after 1 hour
-  setTimeout(() => {
-    clearInterval(heartbeat);
-    sseClients.delete(clientId);
-    res.end();
+  const heartbeat = setInterval(() => {
+    try { res.write(':heartbeat\n\n'); } catch (e) { cleanup(); }
+  }, 30000);
+
+  const autoDisconnect = setTimeout(() => {
+    cleanup();
+    try { res.end(); } catch (e) {}
   }, 60 * 60 * 1000);
+
+  req.on('close', cleanup);
 });
 
 function broadcastSSE(data) {

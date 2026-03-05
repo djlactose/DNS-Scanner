@@ -122,7 +122,7 @@ const App = {
             <a href="#settings" class="${this.currentRoute === 'settings' ? 'active' : ''}">${icons.settings}<span>Settings</span></a>
           </nav>
           <div class="sidebar-footer">
-            <div style="margin-bottom:4px">${this.esc(this.user.username)} (${this.user.role})</div>
+            <div style="margin-bottom:4px">${this.esc(this.user.username)} (${this.esc(this.user.role)})</div>
             <a href="#" onclick="App.logout(); return false;">Sign out</a>
           </div>
         </aside>

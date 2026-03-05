@@ -16,6 +16,9 @@ function getPool() {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
     });
+    pool.on('error', (err) => {
+      console.error('[DB] Unexpected pool error:', err.message);
+    });
   }
   return pool;
 }

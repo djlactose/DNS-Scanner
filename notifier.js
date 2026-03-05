@@ -68,7 +68,7 @@ async function sendEmail(to, subject, html) {
 async function deliverWebhook(webhook, eventType, data) {
   const payload = { event: eventType, timestamp: new Date().toISOString(), ...data };
   const body = JSON.stringify(payload);
-  const signature = crypto.createHmac('sha256', webhook.secret || '').update(body).digest('hex');
+  const signature = webhook.secret ? crypto.createHmac('sha256', webhook.secret).update(body).digest('hex') : '';
 
   const delays = [0, 1000, 5000, 30000];
   let lastError = null;
@@ -152,7 +152,8 @@ async function processPostScanNotifications(domain, scanId) {
   for (const user of users.rows) {
     // Check tag filter
     if (user.notify_tags_only) {
-      const tagIds = JSON.parse(user.notify_tags_only);
+      let tagIds;
+      try { tagIds = typeof user.notify_tags_only === 'string' ? JSON.parse(user.notify_tags_only) : (user.notify_tags_only || []); } catch (e) { tagIds = []; }
       if (tagIds.length > 0) {
         const domainTags = await query('SELECT tag_id FROM domain_tags WHERE domain_id = $1', [domain.id]);
         const domainTagIds = domainTags.rows.map(r => r.tag_id);
@@ -221,7 +222,8 @@ async function processPostScanNotifications(domain, scanId) {
 
   // Send webhooks
   for (const webhook of webhooks.rows) {
-    const events = typeof webhook.events === 'string' ? JSON.parse(webhook.events) : webhook.events;
+    let events;
+    try { events = typeof webhook.events === 'string' ? JSON.parse(webhook.events) : (webhook.events || []); } catch (e) { events = []; }
 
     // Scan completed event
     if (events.includes('scan.completed')) {

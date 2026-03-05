@@ -30,7 +30,10 @@ const scanSemaphore = new Semaphore(MAX_CONCURRENT_CHECKS);
 function isPrivateIP(ip) {
   if (process.env.ALLOW_PRIVATE_RANGES === 'true') return false;
   if (ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
-  const parts = ip.split('.').map(Number);
+  // Handle IPv4-mapped IPv6 (::ffff:10.0.0.1)
+  let v4 = ip;
+  if (ip.startsWith('::ffff:')) v4 = ip.slice(7);
+  const parts = v4.split('.').map(Number);
   if (parts.length !== 4) return false;
   if (parts[0] === 10) return true;
   if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
@@ -153,9 +156,11 @@ async function enumerateDNS(domain) {
 async function tcpCheck(host, port, timeoutMs = HEALTH_CHECK_TIMEOUT_MS) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
-    const timer = setTimeout(() => { socket.destroy(); resolve(false); }, timeoutMs);
-    socket.connect(port, host, () => { clearTimeout(timer); socket.destroy(); resolve(true); });
-    socket.on('error', () => { clearTimeout(timer); socket.destroy(); resolve(false); });
+    socket.setTimeout(timeoutMs);
+    const done = (result) => { socket.destroy(); resolve(result); };
+    socket.connect(port, host, () => done(true));
+    socket.on('error', () => done(false));
+    socket.on('timeout', () => done(false));
   });
 }
 
@@ -181,10 +186,8 @@ async function httpCheck(host, port, useHttps = false) {
 
 async function getSSLInfo(host, port = 443) {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), HEALTH_CHECK_TIMEOUT_MS);
     try {
       const socket = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout: HEALTH_CHECK_TIMEOUT_MS }, () => {
-        clearTimeout(timer);
         const cert = socket.getPeerCertificate();
         const authorized = socket.authorized;
         socket.destroy();
@@ -196,8 +199,9 @@ async function getSSLInfo(host, port = 443) {
           error: authorized ? null : socket.authorizationError,
         });
       });
-      socket.on('error', () => { clearTimeout(timer); resolve(null); });
-    } catch (e) { clearTimeout(timer); resolve(null); }
+      socket.on('error', () => { socket.destroy(); resolve(null); });
+      socket.on('timeout', () => { socket.destroy(); resolve(null); });
+    } catch (e) { resolve(null); }
   });
 }
 
@@ -403,7 +407,7 @@ async function performScan(domain, scanId) {
         recordsToCheck.push({ ...existing, ttl: rec.ttl || existing.ttl });
       } else {
         // Check if value changed for same type+name
-        const changed = existingRecords.rows.find(r => r.record_type === rec.type && r.name === rec.name && r.value !== rec.value);
+        const changed = existingRecords.rows.find(r => r.record_type === rec.type && r.name === rec.name && r.value.toLowerCase().replace(/\.$/, '') !== rec.value.toLowerCase().replace(/\.$/, ''));
         if (changed) {
           await query(
             'INSERT INTO dns_changes (record_id, domain_id, record_type, name, old_value, new_value) VALUES ($1, $2, $3, $4, $5, $6)',
