@@ -177,6 +177,7 @@ async function start() {
 }
 
 start().catch(err => {
-  console.error('[FATAL]', err.message);
+  console.error('[FATAL]', err.message || err);
+  if (err.stack) console.error(err.stack);
   process.exit(1);
 });
