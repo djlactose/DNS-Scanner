@@ -1,0 +1,13 @@
+{
+  "name": "DNS Scanner",
+  "short_name": "DNS Scanner",
+  "description": "Monitor DNS records and detect dead endpoints",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#1e293b",
+  "background_color": "#0f172a",
+  "icons": [
+    { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml" },
+    { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml" }
+  ]
+}
