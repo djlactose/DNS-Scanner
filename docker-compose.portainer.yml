@@ -1,0 +1,137 @@
+services:
+  init:
+    image: alpine:3.19
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -f /secrets/.env ]; then echo "[init] Secrets exist."; exit 0; fi
+        echo "[init] Generating secrets..."
+        gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64; }
+        DB_PASSWORD=$$(gen); REDIS_PASSWORD=$$(gen); SESSION_SECRET=$$(gen); ENCRYPTION_KEY=$$(gen)
+        printf 'DB_PASSWORD=%s\nREDIS_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$DB_PASSWORD" "$$REDIS_PASSWORD" "$$SESSION_SECRET" "$$ENCRYPTION_KEY" > /secrets/.env
+        printf '%s' "$$DB_PASSWORD" > /secrets/db_password
+        printf '%s' "$$REDIS_PASSWORD" > /secrets/redis_password
+        chmod 644 /secrets/.env /secrets/db_password /secrets/redis_password
+        echo "[init] Secrets ready."
+    volumes:
+      - secrets:/secrets
+    restart: "no"
+    networks:
+      - internal
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dnsscanner
+      POSTGRES_USER: dnsscanner
+      POSTGRES_PASSWORD_FILE: /secrets/db_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dnsscanner"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$(cat /secrets/redis_password)" --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /secrets/redis_password)\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: djlactose/dnsscaner:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: dnsscanner
+      DB_USER: dnsscanner
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      PORT: "8080"
+      NODE_ENV: production
+      REGISTRATION_ENABLED: "true"
+      ALLOW_PRIVATE_RANGES: "false"
+      MAX_DOMAINS: "50"
+    volumes:
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    image: djlactose/dnsscaner:latest
+    restart: unless-stopped
+    command: ["node", "worker.js"]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: dnsscanner
+      DB_USER: dnsscanner
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      NODE_ENV: production
+      ALLOW_PRIVATE_RANGES: "false"
+    volumes:
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+
+volumes:
+  pgdata:
+  secrets:
+
+networks:
+  internal:
+    driver: bridge
