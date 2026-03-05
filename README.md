@@ -80,6 +80,17 @@ All configuration is via environment variables (see `.env.example`):
 - Internal services not exposed to host network
 - Rate limiting on login, registration, scan triggers, and general API
 
+## Ports
+
+| Service   | Container Port | Host Port          | Description                          |
+|-----------|----------------|--------------------|--------------------------------------|
+| **nginx** | 8082           | `${NGINX_PORT:-8082}` | Web UI and API (only exposed port) |
+| **app**   | 8080           | *not exposed*      | Internal API server (nginx proxies)  |
+| **db**    | 5432           | *not exposed*      | PostgreSQL (internal only)           |
+| **redis** | 6379           | *not exposed*      | Redis (internal only)                |
+
+Only nginx is exposed to the host network. All other services communicate over an internal Docker bridge network.
+
 ## Volumes
 
 | Volume   | Container       | Mount Path                 | Purpose                                                                  |
