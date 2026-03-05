@@ -60,6 +60,11 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/api/', apiLimiter);
+// Service worker must never be cached
+app.get('/service-worker.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'service-worker.js'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 function setupSession() {

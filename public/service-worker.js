@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dns-scanner-v3';
+const CACHE_NAME = 'dns-scanner-v4';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -16,23 +16,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Network-first for API calls
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    );
-    return;
-  }
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
 
-  // Cache-first for static assets
+  // Network-first for everything — cache is only a fallback for offline
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
+    fetch(event.request).then(response => {
       if (response.ok) {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
       }
       return response;
-    }))
+    }).catch(() => caches.match(event.request))
   );
 });
 
