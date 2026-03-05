@@ -56,10 +56,10 @@ All configuration is via environment variables (see `.env.example`):
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DB_PASSWORD` | Yes | *auto-generated* | PostgreSQL password |
-| `SESSION_SECRET` | Yes | *auto-generated* | Session encryption key (min 32 chars) |
-| `ENCRYPTION_KEY` | Yes | *auto-generated* | SMTP credential encryption key (min 32 chars) |
-| `REDIS_PASSWORD` | Yes | *auto-generated* | Redis password |
+| `DB_PASSWORD` | No | *auto-generated* | PostgreSQL password |
+| `SESSION_SECRET` | No | *auto-generated* | Session encryption key (min 32 chars) |
+| `ENCRYPTION_KEY` | No | *auto-generated* | SMTP credential encryption key (min 32 chars) |
+| `REDIS_PASSWORD` | No | *auto-generated* | Redis password |
 | `REGISTRATION_ENABLED` | No | `true` | Allow new user registration |
 | `ALLOW_PRIVATE_RANGES` | No | `false` | Allow scanning private IP ranges |
 | `MAX_DOMAINS` | No | `50` | Maximum domains per instance |
