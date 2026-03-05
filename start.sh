@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# NOTE: This script is optional. Running `docker compose up` directly
+# will auto-generate secrets. Use this script only if you want to
+# manage secrets in a .env file on the host.
+
 cd "$(dirname "$0")"
 
 if [ ! -f .env ]; then

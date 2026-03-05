@@ -39,10 +39,12 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 ### 1. Start the application
 
 ```bash
-./start.sh
+docker compose up -d
 ```
 
-This will auto-generate a `.env` file with random passwords and secrets on first run, then start all containers. To customize settings, edit `.env` before running (see `.env.example` for all options).
+Secrets (database password, Redis password, session secret, encryption key) are auto-generated on first run and persisted in a Docker volume. No `.env` file or manual configuration is needed.
+
+To override any secret, set it as an environment variable or in a `.env` file before starting (see `.env.example` for all options). Alternatively, use `./start.sh` which generates a `.env` file with random secrets on the host.
 
 ### 2. Access the app
 
@@ -93,11 +95,12 @@ Only nginx is exposed to the host network. All other services communicate over a
 
 ## Volumes
 
-| Volume   | Container       | Mount Path                 | Purpose                                                                  |
-|----------|-----------------|----------------------------|--------------------------------------------------------------------------|
-| `pgdata` | db (PostgreSQL) | `/var/lib/postgresql/data`  | Database storage — all domains, records, scan history, and user accounts |
+| Volume    | Container       | Mount Path                 | Purpose                                                                  |
+|-----------|-----------------|----------------------------|--------------------------------------------------------------------------|
+| `pgdata`  | db (PostgreSQL) | `/var/lib/postgresql/data` | Database storage — all domains, records, scan history, and user accounts |
+| `secrets` | all services    | `/secrets`                 | Auto-generated passwords and encryption keys                             |
 
-The `pgdata` volume persists across container restarts and rebuilds. To manage it:
+Both volumes persist across container restarts and rebuilds. To manage them:
 
 ```bash
 # Back up the database

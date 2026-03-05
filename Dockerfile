@@ -8,6 +8,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev
 
 COPY . .
+RUN chmod +x /app/docker/entrypoint.sh
 
 USER node
 

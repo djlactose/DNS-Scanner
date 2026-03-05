@@ -1,13 +1,32 @@
 services:
+  init:
+    image: alpine:3.19
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+    volumes:
+      - secrets:/secrets
+      - ./docker/init-secrets.sh:/init-secrets.sh:ro
+    entrypoint: ["/bin/sh", "/init-secrets.sh"]
+    restart: "no"
+    networks:
+      - internal
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-dnsscanner}
       POSTGRES_USER: ${DB_USER:-dnsscanner}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_PASSWORD_FILE: /secrets/db_password
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
     networks:
       - internal
     healthcheck:
@@ -21,11 +40,19 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required} --maxmemory 64mb --maxmemory-policy allkeys-lru
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$(cat /secrets/redis_password)" --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /secrets/redis_password)\" ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,23 +62,25 @@ services:
   app:
     build: .
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "/app/docker/entrypoint.sh"]
+    command: ["node", "server.js"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-dnsscanner}
       DB_USER: ${DB_USER:-dnsscanner}
-      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (min 32 chars)}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (min 32 chars)}
       PORT: 8080
       NODE_ENV: production
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
       MAX_DOMAINS: ${MAX_DOMAINS:-50}
+    volumes:
+      - secrets:/secrets:ro
     depends_on:
+      init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -73,21 +102,22 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    command: node worker.js
+    entrypoint: ["/bin/sh", "/app/docker/entrypoint.sh"]
+    command: ["node", "worker.js"]
     environment:
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-dnsscanner}
       DB_USER: ${DB_USER:-dnsscanner}
-      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
-      SESSION_SECRET: ${SESSION_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       NODE_ENV: production
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
+    volumes:
+      - secrets:/secrets:ro
     depends_on:
+      init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -135,6 +165,7 @@ services:
 
 volumes:
   pgdata:
+  secrets:
 
 networks:
   internal:
