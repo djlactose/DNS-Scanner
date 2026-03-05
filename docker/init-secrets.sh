@@ -12,7 +12,7 @@ fi
 echo "[init] Generating secrets..."
 
 gen_secret() {
-    tr -dc 'a-f0-9' < /dev/urandom | head -c 64
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64
 }
 
 # Use env vars if provided, otherwise generate random secrets

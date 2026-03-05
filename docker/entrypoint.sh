@@ -17,7 +17,7 @@ fi
 
 # Generate any missing secrets (standalone mode without init container)
 gen_secret() {
-    tr -dc 'a-f0-9' < /dev/urandom | head -c 64
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64
 }
 
 [ -z "$(printenv DB_PASSWORD 2>/dev/null || true)" ] && export DB_PASSWORD=$(gen_secret)
