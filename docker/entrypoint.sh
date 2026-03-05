@@ -1,10 +1,13 @@
 #!/bin/sh
 set -e
 
+echo "[entrypoint] Starting..."
+
 SECRETS_ENV="/secrets/.env"
 
 # Source secrets from file if it exists (written by init container)
 if [ -f "$SECRETS_ENV" ]; then
+    echo "[entrypoint] Loading secrets from $SECRETS_ENV"
     while IFS='=' read -r key value; do
         [ -z "$key" ] && continue
         case "$key" in \#*) continue ;; esac
@@ -17,12 +20,25 @@ fi
 
 # Generate any missing secrets (standalone mode without init container)
 gen_secret() {
-    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64
+    node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
 }
 
-[ -z "$(printenv DB_PASSWORD 2>/dev/null || true)" ] && export DB_PASSWORD=$(gen_secret)
-[ -z "$(printenv REDIS_PASSWORD 2>/dev/null || true)" ] && export REDIS_PASSWORD=$(gen_secret)
-[ -z "$(printenv SESSION_SECRET 2>/dev/null || true)" ] && export SESSION_SECRET=$(gen_secret)
-[ -z "$(printenv ENCRYPTION_KEY 2>/dev/null || true)" ] && export ENCRYPTION_KEY=$(gen_secret)
+if [ -z "$(printenv DB_PASSWORD 2>/dev/null || true)" ]; then
+    echo "[entrypoint] Generating DB_PASSWORD"
+    export DB_PASSWORD=$(gen_secret)
+fi
+if [ -z "$(printenv REDIS_PASSWORD 2>/dev/null || true)" ]; then
+    echo "[entrypoint] Generating REDIS_PASSWORD"
+    export REDIS_PASSWORD=$(gen_secret)
+fi
+if [ -z "$(printenv SESSION_SECRET 2>/dev/null || true)" ]; then
+    echo "[entrypoint] Generating SESSION_SECRET"
+    export SESSION_SECRET=$(gen_secret)
+fi
+if [ -z "$(printenv ENCRYPTION_KEY 2>/dev/null || true)" ]; then
+    echo "[entrypoint] Generating ENCRYPTION_KEY"
+    export ENCRYPTION_KEY=$(gen_secret)
+fi
 
+echo "[entrypoint] Secrets ready, starting app..."
 exec "$@"
