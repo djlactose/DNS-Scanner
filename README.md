@@ -36,12 +36,10 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 ### 1. Start the application
 
 ```bash
-docker compose up -d
+./start.sh
 ```
 
-Secrets (database password, session secret, encryption key) are auto-generated on first run and persisted in a Docker volume. No `.env` file or manual configuration is needed.
-
-To override any secret, set it as an environment variable or in a `.env` file before starting (see `.env.example` for all options). Alternatively, use `./start.sh` which generates a `.env` file with random secrets on the host.
+This generates a `.env` file with random secrets and starts the containers. If you prefer to manage secrets manually, copy `.env.example` to `.env`, fill in your own values, and run `docker compose up -d`.
 
 ### 2. Access the app
 

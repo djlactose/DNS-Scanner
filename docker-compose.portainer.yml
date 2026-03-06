@@ -15,8 +15,7 @@ services:
         DB_PASSWORD=$${DB_PASSWORD:-$$(gen)}
         SESSION_SECRET=$${SESSION_SECRET:-$$(gen)}; ENCRYPTION_KEY=$${ENCRYPTION_KEY:-$$(gen)}
         printf 'DB_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$DB_PASSWORD" "$$SESSION_SECRET" "$$ENCRYPTION_KEY" > /secrets/.env
-        printf '%s' "$$DB_PASSWORD" > /secrets/db_password
-        chmod 644 /secrets/.env /secrets/db_password
+        chmod 644 /secrets/.env
         echo "[init] Secrets ready."
     volumes:
       - secrets:/secrets
@@ -27,10 +26,16 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        . /secrets/.env
+        export POSTGRES_PASSWORD="$$DB_PASSWORD"
+        exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-dnsscanner}
       POSTGRES_USER: ${DB_USER:-dnsscanner}
-      POSTGRES_PASSWORD_FILE: /secrets/db_password
     volumes:
       - pgdata:/var/lib/postgresql/data
       - secrets:/secrets:ro

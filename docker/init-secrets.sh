@@ -26,8 +26,6 @@ SESSION_SECRET=$SESSION_SECRET
 ENCRYPTION_KEY=$ENCRYPTION_KEY
 EOF
 
-printf '%s' "$DB_PASSWORD" > "$SECRETS_DIR/db_password"
-
-chmod 644 "$SECRETS_ENV" "$SECRETS_DIR/db_password"
+chmod 644 "$SECRETS_ENV"
 
 echo "[init] Secrets ready."
