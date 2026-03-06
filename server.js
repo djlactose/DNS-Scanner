@@ -8,7 +8,9 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const multer = require('multer');
 const crypto = require('node:crypto');
+const compression = require('compression');
 const { getPool, query, initSchema } = require('./db');
+const { startWorker } = require('./worker');
 const { encrypt, decrypt } = require('./crypto-utils');
 const {
   DOMAIN_REGEX, USER_ROLES, SCAN_STATUS, SCAN_TRIGGER,
@@ -33,8 +35,9 @@ function validateEnv() {
 }
 
 // ─── Security headers ───
-app.set('trust proxy', 1); // Trust first proxy (nginx)
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
+app.use(compression());
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -66,7 +69,7 @@ app.get('/service-worker.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'service-worker.js'));
 });
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
 function setupSession() {
   sessionMiddleware = session({
@@ -973,6 +976,7 @@ async function start() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[SERVER] DNS Scanner running on port ${PORT}`);
+    startWorker();
   });
 }
 

@@ -28,11 +28,8 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 
 | Service | Technology | Purpose |
 |---------|-----------|---------|
-| **app** | Node.js 22 + Express | API server, web UI |
-| **worker** | Node.js 22 | Background scan scheduler |
-| **nginx** | Nginx Alpine | Reverse proxy, security headers, rate limiting |
+| **app** | Node.js 22 + Express | API server, web UI, background worker |
 | **db** | PostgreSQL 16 | Primary data store |
-| **redis** | Redis 7 | Distributed locks, scan coordination |
 
 ## Quick Start
 
@@ -42,13 +39,13 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 docker compose up -d
 ```
 
-Secrets (database password, Redis password, session secret, encryption key) are auto-generated on first run and persisted in a Docker volume. No `.env` file or manual configuration is needed.
+Secrets (database password, session secret, encryption key) are auto-generated on first run and persisted in a Docker volume. No `.env` file or manual configuration is needed.
 
 To override any secret, set it as an environment variable or in a `.env` file before starting (see `.env.example` for all options). Alternatively, use `./start.sh` which generates a `.env` file with random secrets on the host.
 
 ### 2. Access the app
 
-Open `http://localhost:8082` in your browser.
+Open `http://localhost:8080` in your browser.
 
 The first user to register automatically becomes an admin.
 
@@ -61,11 +58,10 @@ All configuration is via environment variables (see `.env.example`):
 | `DB_PASSWORD` | No | *auto-generated* | PostgreSQL password |
 | `SESSION_SECRET` | No | *auto-generated* | Session encryption key (min 32 chars) |
 | `ENCRYPTION_KEY` | No | *auto-generated* | SMTP credential encryption key (min 32 chars) |
-| `REDIS_PASSWORD` | No | *auto-generated* | Redis password |
 | `REGISTRATION_ENABLED` | No | `true` | Allow new user registration |
 | `ALLOW_PRIVATE_RANGES` | No | `false` | Allow scanning private IP ranges |
 | `MAX_DOMAINS` | No | `50` | Maximum domains per instance |
-| `NGINX_PORT` | No | `8082` | Host port for web UI |
+| `APP_PORT` | No | `8080` | Host port for web UI |
 
 ## Security
 
@@ -78,20 +74,18 @@ All configuration is via environment variables (see `.env.example`):
 - SMTP credentials encrypted with AES-256-GCM at rest
 - Webhooks signed with HMAC-SHA256
 - All containers run as non-root with minimal capabilities
-- Redis password-protected
 - Internal services not exposed to host network
 - Rate limiting on login, registration, scan triggers, and general API
+- Gzip compression enabled
 
 ## Ports
 
-| Service   | Container Port | Host Port          | Description                          |
-|-----------|----------------|--------------------|--------------------------------------|
-| **nginx** | 8082           | `${NGINX_PORT:-8082}` | Web UI and API (only exposed port) |
-| **app**   | 8080           | *not exposed*      | Internal API server (nginx proxies)  |
-| **db**    | 5432           | *not exposed*      | PostgreSQL (internal only)           |
-| **redis** | 6379           | *not exposed*      | Redis (internal only)                |
+| Service | Container Port | Host Port            | Description              |
+|---------|----------------|----------------------|--------------------------|
+| **app** | 8080           | `${APP_PORT:-8080}`  | Web UI and API           |
+| **db**  | 5432           | *not exposed*        | PostgreSQL (internal only) |
 
-Only nginx is exposed to the host network. All other services communicate over an internal Docker bridge network.
+Only the app is exposed to the host network. The database communicates over an internal Docker bridge network.
 
 ## Volumes
 
@@ -104,16 +98,14 @@ Both volumes persist across container restarts and rebuilds. To manage them:
 
 ```bash
 # Back up the database
-docker-compose exec db pg_dump -U dnsscanner dnsscanner > backup.sql
+docker compose exec db pg_dump -U dnsscanner dnsscanner > backup.sql
 
 # Restore from backup
-docker-compose exec -T db psql -U dnsscanner dnsscanner < backup.sql
+docker compose exec -T db psql -U dnsscanner dnsscanner < backup.sql
 
 # Reset all data (destructive — removes everything)
-docker-compose down -v
+docker compose down -v
 ```
-
-Redis is used only for ephemeral locks and coordination, so it does not require a persistent volume.
 
 ## How "Dead" Is Determined
 
@@ -177,7 +169,7 @@ All endpoints require authentication unless noted. Admin-only endpoints require 
 ## Development
 
 ```bash
-# Run without Docker (requires PostgreSQL and Redis)
+# Run without Docker (requires PostgreSQL)
 npm install
 DB_PASSWORD=dev SESSION_SECRET=$(openssl rand -hex 32) ENCRYPTION_KEY=$(openssl rand -hex 32) node server.js
 ```

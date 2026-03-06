@@ -17,14 +17,12 @@ if [ ! -f .env ]; then
     fi
 
     DB_PASSWORD=$(gen_secret)
-    REDIS_PASSWORD=$(gen_secret)
     SESSION_SECRET=$(gen_secret)
     ENCRYPTION_KEY=$(gen_secret)
 
     cp .env.example .env
 
     sed -i "s/DB_PASSWORD=change_me_to_a_strong_password/DB_PASSWORD=$DB_PASSWORD/" .env
-    sed -i "s/REDIS_PASSWORD=change_me_to_a_strong_password/REDIS_PASSWORD=$REDIS_PASSWORD/" .env
     sed -i "s/SESSION_SECRET=change_me_to_a_random_string_at_least_32_chars/SESSION_SECRET=$SESSION_SECRET/" .env
     sed -i "s/ENCRYPTION_KEY=change_me_to_a_random_string_at_least_32_chars/ENCRYPTION_KEY=$ENCRYPTION_KEY/" .env
 
@@ -34,4 +32,4 @@ else
     echo "Using existing .env file."
 fi
 
-docker-compose up -d --build
+docker compose up -d --build

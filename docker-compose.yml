@@ -3,7 +3,6 @@ services:
     image: alpine:3.19
     environment:
       DB_PASSWORD: ${DB_PASSWORD:-}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     volumes:
@@ -37,38 +36,16 @@ services:
     mem_limit: 512m
     cpus: '1.0'
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command:
-      - sh
-      - -c
-      - exec redis-server --requirepass "$$(cat /secrets/redis_password)" --maxmemory 64mb --maxmemory-policy allkeys-lru
-    volumes:
-      - secrets:/secrets:ro
-    depends_on:
-      init:
-        condition: service_completed_successfully
-    networks:
-      - internal
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /secrets/redis_password)\" ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    mem_limit: 128m
-    cpus: '0.5'
-
   app:
     build: .
     restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
     environment:
       DB_HOST: db
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-dnsscanner}
       DB_USER: ${DB_USER:-dnsscanner}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
       PORT: 8080
       NODE_ENV: production
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
@@ -80,8 +57,6 @@ services:
       init:
         condition: service_completed_successfully
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - internal
@@ -96,69 +71,6 @@ services:
       retries: 3
     mem_limit: 512m
     cpus: '1.0'
-
-  worker:
-    build: .
-    restart: unless-stopped
-    command: ["node", "worker.js"]
-    environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-dnsscanner}
-      DB_USER: ${DB_USER:-dnsscanner}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      NODE_ENV: production
-      ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
-    volumes:
-      - secrets:/secrets:ro
-    depends_on:
-      init:
-        condition: service_completed_successfully
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - internal
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-    healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    mem_limit: 512m
-    cpus: '1.0'
-
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "${NGINX_PORT:-8082}:8082"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      app:
-        condition: service_healthy
-    networks:
-      - internal
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/cache/nginx
-      - /var/log/nginx
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-      - CHOWN
-      - SETUID
-      - SETGID
-    mem_limit: 128m
-    cpus: '0.5'
 
 volumes:
   pgdata:

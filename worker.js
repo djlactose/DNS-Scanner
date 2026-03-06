@@ -1,32 +1,28 @@
 'use strict';
 
-const Redis = require('ioredis');
 const { query, initSchema } = require('./db');
 const { performScan } = require('./scanner');
 const { updateWhoisForDomain } = require('./whois');
 const { SCAN_STATUS, SCAN_TRIGGER, MAX_CONCURRENT_SCANS } = require('./constants');
 
-// Validate required env vars
-if (!process.env.DB_PASSWORD) { console.error('[FATAL] Missing DB_PASSWORD'); process.exit(1); }
-if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) { console.error('[FATAL] Missing/short SESSION_SECRET'); process.exit(1); }
-if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) { console.error('[FATAL] Missing/short ENCRYPTION_KEY'); process.exit(1); }
+// ─── PostgreSQL advisory locks (replaces Redis) ───
+function lockKeyToId(key) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
 
-const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  password: process.env.REDIS_PASSWORD || undefined,
-  retryStrategy: (times) => Math.min(times * 500, 5000),
-});
-
-redis.on('error', (err) => console.error('[REDIS]', err.message));
-
-async function acquireLock(key, ttlSeconds = 300) {
-  const result = await redis.set(`lock:${key}`, Date.now(), 'EX', ttlSeconds, 'NX');
-  return result === 'OK';
+async function acquireLock(key) {
+  const id = lockKeyToId(key);
+  const result = await query('SELECT pg_try_advisory_lock($1) AS acquired', [id]);
+  return result.rows[0].acquired;
 }
 
 async function releaseLock(key) {
-  await redis.del(`lock:${key}`);
+  const id = lockKeyToId(key);
+  await query('SELECT pg_advisory_unlock($1)', [id]);
 }
 
 async function checkScheduledScans() {
@@ -48,7 +44,7 @@ async function checkScheduledScans() {
       if (running >= MAX_CONCURRENT_SCANS) break;
 
       const lockKey = `scan:${domain.id}`;
-      if (!(await acquireLock(lockKey, 300))) continue;
+      if (!(await acquireLock(lockKey))) continue;
 
       try {
         const scanResult = await query(
@@ -75,7 +71,7 @@ async function checkScheduledScans() {
 async function checkWhoisUpdates() {
   try {
     const lockKey = 'whois_check';
-    if (!(await acquireLock(lockKey, 3600))) return;
+    if (!(await acquireLock(lockKey))) return;
 
     try {
       const domains = await query(`
@@ -104,7 +100,7 @@ async function checkWhoisUpdates() {
 async function cleanupOldData() {
   try {
     const lockKey = 'cleanup';
-    if (!(await acquireLock(lockKey, 600))) return;
+    if (!(await acquireLock(lockKey))) return;
 
     try {
       const result = await query("DELETE FROM health_checks WHERE checked_at < NOW() - INTERVAL '90 days'");
@@ -156,9 +152,8 @@ async function checkDomainExpiry() {
   }
 }
 
-async function start() {
+function startWorker() {
   console.log('[WORKER] Starting background worker...');
-  await initSchema();
 
   // Check scheduled scans every 5 minutes
   setInterval(checkScheduledScans, 5 * 60 * 1000);
@@ -176,8 +171,17 @@ async function start() {
   console.log('[WORKER] Background worker running');
 }
 
-start().catch(err => {
-  console.error('[FATAL]', err.message || err);
-  if (err.stack) console.error(err.stack);
-  process.exit(1);
-});
+module.exports = { startWorker };
+
+// Allow standalone execution
+if (require.main === module) {
+  if (!process.env.DB_PASSWORD) { console.error('[FATAL] Missing DB_PASSWORD'); process.exit(1); }
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) { console.error('[FATAL] Missing/short SESSION_SECRET'); process.exit(1); }
+  if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) { console.error('[FATAL] Missing/short ENCRYPTION_KEY'); process.exit(1); }
+
+  initSchema().then(() => startWorker()).catch(err => {
+    console.error('[FATAL]', err.message || err);
+    if (err.stack) console.error(err.stack);
+    process.exit(1);
+  });
+}

@@ -27,10 +27,6 @@ if [ -z "$(printenv DB_PASSWORD 2>/dev/null || true)" ]; then
     echo "[entrypoint] Generating DB_PASSWORD"
     export DB_PASSWORD=$(gen_secret)
 fi
-if [ -z "$(printenv REDIS_PASSWORD 2>/dev/null || true)" ]; then
-    echo "[entrypoint] Generating REDIS_PASSWORD"
-    export REDIS_PASSWORD=$(gen_secret)
-fi
 if [ -z "$(printenv SESSION_SECRET 2>/dev/null || true)" ]; then
     echo "[entrypoint] Generating SESSION_SECRET"
     export SESSION_SECRET=$(gen_secret)
