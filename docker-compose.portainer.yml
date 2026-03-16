@@ -5,22 +5,29 @@ services:
       POSTGRES_DB: ${DB_NAME:-dnsscanner}
       POSTGRES_USER: ${DB_USER:-dnsscanner}
       DB_PASSWORD: ${DB_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        if [ -z "$$DB_PASSWORD" ]; then
-          if [ ! -f /secrets/.env ]; then
-            echo "[init] No secrets provided, generating..."
-            gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
-            printf 'DB_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$(gen)" "$$(gen)" "$$(gen)" > /secrets/.env
-            chmod 600 /secrets/.env
-            echo "[init] Secrets saved to /secrets/.env"
-          fi
-          . /secrets/.env
-          export DB_PASSWORD
+        set -e
+        echo "[init] Checking secrets..."
+        if [ ! -f /secrets/.env ]; then
+          echo "[init] No secrets file found, generating..."
+          mkdir -p /secrets
+          S1=$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+          S2=$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+          S3=$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+          printf 'DB_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$S1" "$$S2" "$$S3" > /secrets/.env
+          chmod 644 /secrets/.env
+          echo "[init] Secrets generated and saved."
+        else
+          echo "[init] Secrets file exists."
         fi
+        . /secrets/.env
         export POSTGRES_PASSWORD="$$DB_PASSWORD"
+        echo "[init] Starting PostgreSQL..."
         exec docker-entrypoint.sh postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -49,9 +56,6 @@ services:
       DB_PORT: "5432"
       DB_NAME: ${DB_NAME:-dnsscanner}
       DB_USER: ${DB_USER:-dnsscanner}
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      SESSION_SECRET: ${SESSION_SECRET:-}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       PORT: "8080"
       NODE_ENV: production
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
@@ -61,12 +65,21 @@ services:
       - /bin/sh
       - -c
       - |
-        if [ -z "$$DB_PASSWORD" ] || [ -z "$$SESSION_SECRET" ] || [ -z "$$ENCRYPTION_KEY" ]; then
-          echo "[app] Waiting for secrets..."
-          while [ ! -f /secrets/.env ]; do sleep 1; done
-          . /secrets/.env
-          export DB_PASSWORD SESSION_SECRET ENCRYPTION_KEY
-        fi
+        set -e
+        echo "[app] Waiting for secrets file..."
+        TRIES=0
+        while [ ! -f /secrets/.env ]; do
+          TRIES=$$((TRIES + 1))
+          if [ "$$TRIES" -gt 60 ]; then
+            echo "[app] ERROR: Secrets file not found after 60s. Check db container logs."
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "[app] Secrets file found, loading..."
+        . /secrets/.env
+        export DB_PASSWORD SESSION_SECRET ENCRYPTION_KEY
+        echo "[app] Starting application..."
         exec node server.js
     volumes:
       - secrets:/secrets:ro

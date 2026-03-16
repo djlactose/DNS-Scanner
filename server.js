@@ -827,8 +827,8 @@ app.get('/api/smtp', requireAdmin, async (req, res) => {
 app.put('/api/smtp', requireAdmin, async (req, res) => {
   try {
     const { smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure } = req.body;
-    if (!smtp_host || !smtp_pass) return res.status(400).json({ error: 'SMTP host and password required' });
-    const encryptedPass = encrypt(smtp_pass);
+    if (!smtp_host) return res.status(400).json({ error: 'SMTP host is required' });
+    const encryptedPass = smtp_pass ? encrypt(smtp_pass) : '';
     await query('DELETE FROM smtp_config');
     await query('INSERT INTO smtp_config (smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure) VALUES ($1, $2, $3, $4, $5)',
       [smtp_host, smtp_port || 587, smtp_user || '', encryptedPass, smtp_secure !== false]);

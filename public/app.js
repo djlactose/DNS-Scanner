@@ -856,7 +856,7 @@ const App = {
             <div class="form-group"><label>Host</label><input id="smtp-host" value="${this.esc(smtp.smtp_host || '')}"></div>
             <div class="form-group"><label>Port</label><input id="smtp-port" type="number" value="${smtp.smtp_port || 587}"></div>
             <div class="form-group"><label>Username</label><input id="smtp-user" value="${this.esc(smtp.smtp_user || '')}"></div>
-            <div class="form-group"><label>Password</label><input id="smtp-pass" type="password" placeholder="Enter password"></div>
+            <div class="form-group"><label>Password (optional)</label><input id="smtp-pass" type="password" placeholder="Leave blank if not required"></div>
             <label class="toggle" style="margin-bottom:16px"><input type="checkbox" id="smtp-secure" ${smtp.smtp_secure !== false ? 'checked' : ''}><div class="toggle-track"></div>Use TLS</label>
             <div style="display:flex;gap:8px"><button class="btn-primary" onclick="App.saveSMTP()">Save</button><button class="btn-secondary" onclick="App.testEmail()">Test</button></div>
           </div>`;

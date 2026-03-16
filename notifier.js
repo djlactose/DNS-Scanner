@@ -51,12 +51,15 @@ async function getSmtpTransport() {
   const config = await query('SELECT * FROM smtp_config LIMIT 1');
   if (config.rows.length === 0) return null;
   const c = config.rows[0];
-  return nodemailer.createTransport({
+  const transportOpts = {
     host: c.smtp_host,
     port: c.smtp_port,
     secure: c.smtp_secure,
-    auth: { user: c.smtp_user, pass: decrypt(c.smtp_pass) },
-  });
+  };
+  if (c.smtp_pass) {
+    transportOpts.auth = { user: c.smtp_user, pass: decrypt(c.smtp_pass) };
+  }
+  return nodemailer.createTransport(transportOpts);
 }
 
 async function sendEmail(to, subject, html) {
