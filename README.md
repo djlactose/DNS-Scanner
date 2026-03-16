@@ -49,7 +49,7 @@ The first user to register automatically becomes an admin.
 
 ## Configuration
 
-All configuration is via environment variables (see `.env.example`):
+All configuration is via environment variables (see `.env.example`). Secrets (`DB_PASSWORD`, `SESSION_SECRET`, `ENCRYPTION_KEY`) are auto-generated on first run if not provided:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -90,9 +90,9 @@ Only the app is exposed to the host network. The database communicates over an i
 | Volume    | Container       | Mount Path                 | Purpose                                                                  |
 |-----------|-----------------|----------------------------|--------------------------------------------------------------------------|
 | `pgdata`  | db (PostgreSQL) | `/var/lib/postgresql/data` | Database storage — all domains, records, scan history, and user accounts |
-| `secrets` | all services    | `/secrets`                 | Auto-generated passwords and encryption keys                             |
+| `secrets` | db, app         | `/secrets`                 | Auto-generated secrets (Portainer deploy only)                           |
 
-Both volumes persist across container restarts and rebuilds. To manage them:
+These volumes persist across container restarts and rebuilds. To manage them:
 
 ```bash
 # Back up the database

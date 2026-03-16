@@ -1,47 +1,30 @@
 services:
-  init:
-    image: alpine:3.19
-    environment:
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      SESSION_SECRET: ${SESSION_SECRET:-}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -f /secrets/.env ]; then echo "[init] Secrets exist."; exit 0; fi
-        echo "[init] Generating secrets..."
-        gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 64; }
-        DB_PASSWORD=$${DB_PASSWORD:-$$(gen)}
-        SESSION_SECRET=$${SESSION_SECRET:-$$(gen)}; ENCRYPTION_KEY=$${ENCRYPTION_KEY:-$$(gen)}
-        printf 'DB_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$DB_PASSWORD" "$$SESSION_SECRET" "$$ENCRYPTION_KEY" > /secrets/.env
-        chmod 644 /secrets/.env
-        echo "[init] Secrets ready."
-    volumes:
-      - secrets:/secrets
-    restart: "no"
-    networks:
-      - internal
-
   db:
     image: postgres:16-alpine
-    restart: unless-stopped
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        . /secrets/.env
-        export POSTGRES_PASSWORD="$$DB_PASSWORD"
-        exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_DB: ${DB_NAME:-dnsscanner}
       POSTGRES_USER: ${DB_USER:-dnsscanner}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$DB_PASSWORD" ]; then
+          if [ ! -f /secrets/.env ]; then
+            echo "[init] No secrets provided, generating..."
+            gen() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+            printf 'DB_PASSWORD=%s\nSESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$(gen)" "$$(gen)" "$$(gen)" > /secrets/.env
+            chmod 600 /secrets/.env
+            echo "[init] Secrets saved to /secrets/.env"
+          fi
+          . /secrets/.env
+          export DB_PASSWORD
+        fi
+        export POSTGRES_PASSWORD="$$DB_PASSWORD"
+        exec docker-entrypoint.sh postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - secrets:/secrets:ro
-    depends_on:
-      init:
-        condition: service_completed_successfully
+      - secrets:/secrets
     networks:
       - internal
     healthcheck:
@@ -49,10 +32,16 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
 
   app:
     image: djlactose/dnsscaner:latest
-    restart: unless-stopped
     ports:
       - "${APP_PORT:-8080}:8080"
     environment:
@@ -60,18 +49,29 @@ services:
       DB_PORT: "5432"
       DB_NAME: ${DB_NAME:-dnsscanner}
       DB_USER: ${DB_USER:-dnsscanner}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       PORT: "8080"
       NODE_ENV: production
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
       MAX_DOMAINS: ${MAX_DOMAINS:-50}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$DB_PASSWORD" ] || [ -z "$$SESSION_SECRET" ] || [ -z "$$ENCRYPTION_KEY" ]; then
+          echo "[app] Waiting for secrets..."
+          while [ ! -f /secrets/.env ]; do sleep 1; done
+          . /secrets/.env
+          export DB_PASSWORD SESSION_SECRET ENCRYPTION_KEY
+        fi
+        exec node server.js
     volumes:
       - secrets:/secrets:ro
     depends_on:
-      init:
-        condition: service_completed_successfully
-      db:
-        condition: service_healthy
+      - db
     networks:
       - internal
     cap_drop:
@@ -83,21 +83,18 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
+    deploy:
+      restart_policy:
+        condition: any
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
 
 volumes:
   pgdata:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_PATH:-/srv/dnsscanner}/pgdata
   secrets:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_PATH:-/srv/dnsscanner}/secrets
 
 networks:
   internal:
-    driver: bridge
+    driver: overlay
