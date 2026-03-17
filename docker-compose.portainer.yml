@@ -5,9 +5,13 @@ services:
       - /bin/sh
       - -c
       - |
-        echo "[db] Writing trust pg_hba.conf to /tmp"
-        printf 'local all all trust\nhost all all 0.0.0.0/0 trust\nhost all all ::/0 trust\n' > /tmp/pg_hba_override.conf
-        exec docker-entrypoint.sh postgres -c hba_file=/tmp/pg_hba_override.conf
+        PGDATA=/var/lib/postgresql/data
+        # Detect corrupted data dir: PG_VERSION exists but template DB is missing
+        if [ -f "$$PGDATA/PG_VERSION" ] && [ ! -d "$$PGDATA/base/1" ]; then
+          echo "[db] Corrupted data directory detected, wiping for clean init..."
+          rm -rf "$$PGDATA"/*
+        fi
+        exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_DB: dnsscanner
       POSTGRES_USER: dnsscanner
@@ -17,10 +21,11 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dnsscanner -d dnsscanner"]
+      test: ["CMD-SHELL", "pg_isready -U dnsscanner"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 120s
     deploy:
       restart_policy:
         condition: any

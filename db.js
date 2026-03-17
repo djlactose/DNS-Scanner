@@ -33,7 +33,7 @@ async function ensureDatabase() {
   const adminPool = new Pool({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
-    database: 'postgres',
+    database: 'template1',
     user: dbUser,
     password: process.env.DB_PASSWORD,
     max: 1,
