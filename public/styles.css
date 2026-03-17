@@ -476,6 +476,31 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .auth-card button { width: 100%; margin-top: 8px; padding: 10px; font-size: 15px; }
 .auth-card .auth-switch { margin-top: 16px; font-size: 14px; color: var(--text-secondary); }
 
+/* Auth divider */
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--text-muted); font-size: 13px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+
+/* Passkey & Google buttons */
+.btn-passkey, .btn-google {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px; font-size: 14px; margin-top: 8px;
+}
+.btn-passkey svg, .btn-google svg { flex-shrink: 0; }
+
+/* Passkey list */
+.passkey-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+.passkey-item strong { font-size: 14px; }
+
+/* Linked accounts */
+.linked-account-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 0;
+}
+
 /* CSV import */
 .drop-zone {
   border: 2px dashed var(--border);

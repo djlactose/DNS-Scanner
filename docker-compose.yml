@@ -36,6 +36,8 @@ services:
       REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
       MAX_DOMAINS: ${MAX_DOMAINS:-50}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

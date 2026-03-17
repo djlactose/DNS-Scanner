@@ -247,6 +247,44 @@ async function initSchema() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries ON webhook_deliveries(webhook_id, delivered_at DESC)`);
 
+    // ─── WebAuthn / Passkey tables ───
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_credentials (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        credential_id TEXT UNIQUE NOT NULL,
+        public_key TEXT NOT NULL,
+        counter BIGINT DEFAULT 0,
+        device_type VARCHAR(20),
+        backed_up BOOLEAN DEFAULT FALSE,
+        transports JSONB,
+        name VARCHAR(100),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        last_used_at TIMESTAMPTZ
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_credentials_user ON user_credentials(user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_credentials_cred_id ON user_credentials(credential_id)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS webauthn_challenges (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) NOT NULL,
+        challenge TEXT NOT NULL,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(20) NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_session ON webauthn_challenges(session_id)`);
+
+    // ─── Add Google OAuth and passkey columns to users ───
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS passkey_mode VARCHAR(20) DEFAULT 'either'`);
+    await client.query(`DO $$ BEGIN ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL; EXCEPTION WHEN others THEN NULL; END $$`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`);
+
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');
   } catch (err) {

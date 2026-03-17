@@ -153,16 +153,51 @@ const App = {
   },
   formatDate(date) { return date ? new Date(date).toLocaleString() : '-'; },
 
+  // ─── WebAuthn helpers ───
+  bufferToBase64url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let str = '';
+    for (const b of bytes) str += String.fromCharCode(b);
+    return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  },
+  base64urlToBuffer(base64url) {
+    const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+    const str = atob(base64);
+    const bytes = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
+    return bytes.buffer;
+  },
+
   // ─── Auth ───
-  renderLogin() {
+  async renderLogin() {
+    // Check Google auth status
+    let googleEnabled = false;
+    try {
+      const gs = await fetch('/api/auth/google/status').then(r => r.json());
+      googleEnabled = gs.enabled;
+    } catch (e) {}
+    const hasWebAuthn = !!window.PublicKeyCredential;
+
+    let altLogins = '';
+    if (hasWebAuthn || googleEnabled) {
+      altLogins = '<div class="auth-divider"><span>or</span></div>';
+      if (hasWebAuthn) altLogins += '<button class="btn-secondary btn-passkey" onclick="App.doPasskeyLogin()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><circle cx="12" cy="16.5" r="1.5"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Sign in with Passkey</button>';
+      if (googleEnabled) altLogins += '<button class="btn-secondary btn-google" onclick="window.location.href=\'/api/auth/google\'"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign in with Google</button>';
+    }
+
+    const errorParam = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const errorMsg = errorParam.get('error');
+    const errorMap = { google_auth_failed: 'Google sign-in failed', google_token_failed: 'Google authentication error', first_user_must_register: 'First user must register with a password' };
+
     document.getElementById('app').innerHTML = `
       <div class="auth-page"><div class="auth-card card">
         <h1>DNS Scanner</h1><p>Sign in to continue</p>
         <div class="form-group"><label>Username</label><input id="login-user" autocomplete="username"></div>
         <div class="form-group"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password"></div>
-        <div id="login-error" class="form-error" style="display:none"></div>
+        <div id="login-error" class="form-error" style="display:${errorMsg ? 'block' : 'none'}">${errorMsg ? (errorMap[errorMsg] || errorMsg) : ''}</div>
         <button class="btn-primary" onclick="App.doLogin()">Sign In</button>
         <div class="auth-switch"><a href="#forgot-password">Forgot password?</a></div>
+        ${altLogins}
         <div class="auth-switch">Don't have an account? <a href="#register">Register</a></div>
       </div></div>`;
     document.getElementById('login-user').focus();
@@ -186,10 +221,91 @@ const App = {
     const errEl = document.getElementById('login-error');
     try {
       errEl.style.display = 'none';
-      this.user = await this.api('/auth/login', { method: 'POST', body: { username: document.getElementById('login-user').value, password: document.getElementById('login-pass').value } });
+      const result = await this.api('/auth/login', { method: 'POST', body: { username: document.getElementById('login-user').value, password: document.getElementById('login-pass').value } });
+      if (result.requires2fa) {
+        this.show2faPrompt();
+        return;
+      }
+      this.user = result;
       this.connectSSE();
       this.navigate('dashboard');
     } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  },
+
+  show2faPrompt() {
+    document.getElementById('app').innerHTML = `
+      <div class="auth-page"><div class="auth-card card">
+        <h1>Two-Factor Authentication</h1>
+        <p>Verify your identity with a passkey</p>
+        <div id="2fa-error" class="form-error" style="display:none"></div>
+        <button class="btn-primary btn-passkey" onclick="App.doPasskey2fa()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><circle cx="12" cy="16.5" r="1.5"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Verify with Passkey
+        </button>
+        <div class="auth-switch"><a href="#login" onclick="App.user=null">Cancel</a></div>
+      </div></div>`;
+  },
+
+  async doPasskey2fa() {
+    const errEl = document.getElementById('2fa-error');
+    try {
+      if (errEl) errEl.style.display = 'none';
+      const options = await this.api('/auth/passkey/2fa-options', { method: 'POST' });
+      if (options.allowCredentials) {
+        options.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: this.base64urlToBuffer(c.id) }));
+      }
+      options.challenge = this.base64urlToBuffer(options.challenge);
+      const assertion = await navigator.credentials.get({ publicKey: options });
+      const result = await this.api('/auth/passkey/verify-2fa', { method: 'POST', body: {
+        credential: {
+          id: assertion.id,
+          rawId: this.bufferToBase64url(assertion.rawId),
+          type: assertion.type,
+          response: {
+            authenticatorData: this.bufferToBase64url(assertion.response.authenticatorData),
+            clientDataJSON: this.bufferToBase64url(assertion.response.clientDataJSON),
+            signature: this.bufferToBase64url(assertion.response.signature),
+            userHandle: assertion.response.userHandle ? this.bufferToBase64url(assertion.response.userHandle) : undefined,
+          },
+        },
+      }});
+      this.user = result;
+      this.connectSSE();
+      this.navigate('dashboard');
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message || 'Passkey verification failed'; errEl.style.display = 'block'; }
+    }
+  },
+
+  async doPasskeyLogin() {
+    const errEl = document.getElementById('login-error');
+    try {
+      if (errEl) errEl.style.display = 'none';
+      const options = await this.api('/auth/passkey/login-options', { method: 'POST', body: {} });
+      if (options.allowCredentials) {
+        options.allowCredentials = options.allowCredentials.map(c => ({ ...c, id: this.base64urlToBuffer(c.id) }));
+      }
+      options.challenge = this.base64urlToBuffer(options.challenge);
+      const assertion = await navigator.credentials.get({ publicKey: options });
+      const result = await this.api('/auth/passkey/login-verify', { method: 'POST', body: {
+        credential: {
+          id: assertion.id,
+          rawId: this.bufferToBase64url(assertion.rawId),
+          type: assertion.type,
+          response: {
+            authenticatorData: this.bufferToBase64url(assertion.response.authenticatorData),
+            clientDataJSON: this.bufferToBase64url(assertion.response.clientDataJSON),
+            signature: this.bufferToBase64url(assertion.response.signature),
+            userHandle: assertion.response.userHandle ? this.bufferToBase64url(assertion.response.userHandle) : undefined,
+          },
+        },
+      }});
+      this.user = result;
+      this.connectSSE();
+      this.navigate('dashboard');
+    } catch (e) {
+      if (errEl) { errEl.textContent = e.message || 'Passkey login failed'; errEl.style.display = 'block'; }
+    }
   },
 
   async doRegister() {
@@ -874,6 +990,7 @@ const App = {
         <button class="settings-tab" onclick="App.showSettingsTab('notifications', this)">Notifications</button>
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'smtp\', this)">SMTP</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'webhooks\', this)">Webhooks</button>' : ''}
+        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'auth\', this)">Authentication</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'users\', this)">Users</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'tags\', this)">Tags</button>' : ''}
       </div>
@@ -891,16 +1008,39 @@ const App = {
 
     switch (tab) {
       case 'profile':
+        const hasPassword = this.user.has_password !== false;
         content.innerHTML = `<div class="card" style="max-width:500px">
           <h3 style="margin-bottom:16px">Profile</h3>
           <div class="form-group"><label>Username</label><input value="${this.esc(this.user.username)}" disabled></div>
           <div class="form-group"><label>Email</label><input id="set-email" value="${this.esc(this.user.email || '')}"></div>
           <button class="btn-primary" onclick="App.updateProfile()">Save</button>
-          <h3 style="margin:24px 0 16px">Change Password</h3>
-          <div class="form-group"><label>Current Password</label><input id="set-curpass" type="password"></div>
+          <h3 style="margin:24px 0 16px">${hasPassword ? 'Change Password' : 'Set Password'}</h3>
+          ${hasPassword ? '<div class="form-group"><label>Current Password</label><input id="set-curpass" type="password"></div>' : ''}
           <div class="form-group"><label>New Password</label><input id="set-newpass" type="password"></div>
-          <button class="btn-primary" onclick="App.changePassword()">Update Password</button>
+          <button class="btn-primary" onclick="App.changePassword()">${hasPassword ? 'Update Password' : 'Set Password'}</button>
+        </div>
+        ${window.PublicKeyCredential ? `
+        <div class="card" style="max-width:500px;margin-top:16px">
+          <h3 style="margin-bottom:16px">Passkeys</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Use passkeys for passwordless login, two-factor authentication, or as an alternative to your password.</p>
+          ${this.user.passkey_count > 0 ? `
+          <div class="form-group">
+            <label>Passkey Mode</label>
+            <select id="passkey-mode" onchange="App.setPasskeyMode(this.value)">
+              <option value="either" ${this.user.passkey_mode === 'either' ? 'selected' : ''}>Either (password or passkey)</option>
+              <option value="twofactor" ${this.user.passkey_mode === 'twofactor' ? 'selected' : ''}>Two-factor (password + passkey)</option>
+              <option value="passwordless" ${this.user.passkey_mode === 'passwordless' ? 'selected' : ''}>Passwordless (passkey only)</option>
+            </select>
+          </div>` : ''}
+          <div id="passkey-list" style="margin-bottom:16px"></div>
+          <button class="btn-primary btn-sm" onclick="App.registerPasskey()">+ Register New Passkey</button>
+        </div>` : ''}
+        <div class="card" style="max-width:500px;margin-top:16px">
+          <h3 style="margin-bottom:16px">Linked Accounts</h3>
+          <div id="linked-accounts"></div>
         </div>`;
+        if (window.PublicKeyCredential) this.loadPasskeys();
+        this.loadLinkedAccounts();
         break;
 
       case 'notifications':
@@ -965,6 +1105,21 @@ const App = {
         } catch (e) { content.innerHTML = `<div class="card"><p>Error loading webhooks</p></div>`; }
         break;
 
+      case 'auth':
+        try {
+          const gs = await fetch('/api/auth/google/status').then(r => r.json());
+          const googleConfigured = !!gs.clientId;
+          content.innerHTML = `<div class="card" style="max-width:500px">
+            <h3 style="margin-bottom:16px">Authentication Settings</h3>
+            <h4 style="margin-bottom:8px">Google Sign-In</h4>
+            ${gs.clientId ? `
+              <label class="toggle"><input type="checkbox" id="google-auth-toggle" ${gs.enabled ? 'checked' : ''} onchange="App.toggleGoogleAuth(this.checked)"><div class="toggle-track"></div>Enable Google Sign-In</label>
+              <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Client ID: ${gs.clientId.substring(0, 20)}...</p>
+            ` : '<p style="color:var(--text-muted);font-size:13px">Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables to enable.</p>'}
+          </div>`;
+        } catch (e) { content.innerHTML = `<div class="card"><p>Error loading auth settings</p></div>`; }
+        break;
+
       case 'users':
         try {
           const users = await this.api('/users');
@@ -1014,13 +1169,131 @@ const App = {
 
   async changePassword() {
     try {
-      await this.api('/auth/password', { method: 'PUT', body: {
-        currentPassword: document.getElementById('set-curpass').value,
-        newPassword: document.getElementById('set-newpass').value,
-      }});
+      const body = { newPassword: document.getElementById('set-newpass').value };
+      const curPassEl = document.getElementById('set-curpass');
+      if (curPassEl) body.currentPassword = curPassEl.value;
+      await this.api('/auth/password', { method: 'PUT', body });
+      this.user = await this.api('/auth/me');
       this.toast('Password updated', 'success');
-      document.getElementById('set-curpass').value = '';
+      if (curPassEl) curPassEl.value = '';
       document.getElementById('set-newpass').value = '';
+    } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  async loadPasskeys() {
+    const container = document.getElementById('passkey-list');
+    if (!container) return;
+    try {
+      const passkeys = await this.api('/auth/passkey/credentials');
+      if (passkeys.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);font-size:13px">No passkeys registered</p>';
+        return;
+      }
+      container.innerHTML = passkeys.map(pk => `
+        <div class="passkey-item">
+          <div>
+            <strong>${this.esc(pk.name)}</strong>
+            <div style="font-size:12px;color:var(--text-muted)">${pk.device_type || 'Unknown device'} &middot; Added ${this.formatDate(pk.created_at)}${pk.last_used_at ? ' &middot; Last used ' + this.timeAgo(pk.last_used_at) : ''}</div>
+          </div>
+          <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deletePasskey(${pk.id})">&#10005;</button>
+        </div>
+      `).join('');
+    } catch (e) { container.innerHTML = '<p style="color:var(--danger)">Failed to load passkeys</p>'; }
+  },
+
+  async registerPasskey() {
+    try {
+      const options = await this.api('/auth/passkey/register-options', { method: 'POST' });
+      // Convert base64url fields to ArrayBuffers
+      options.challenge = this.base64urlToBuffer(options.challenge);
+      options.user.id = this.base64urlToBuffer(options.user.id);
+      if (options.excludeCredentials) {
+        options.excludeCredentials = options.excludeCredentials.map(c => ({ ...c, id: this.base64urlToBuffer(c.id) }));
+      }
+      const credential = await navigator.credentials.create({ publicKey: options });
+      const name = prompt('Name this passkey (e.g., "MacBook Touch ID", "Phone"):', 'My Passkey');
+      if (!name) return;
+      await this.api('/auth/passkey/register-verify', { method: 'POST', body: {
+        name,
+        credential: {
+          id: credential.id,
+          rawId: this.bufferToBase64url(credential.rawId),
+          type: credential.type,
+          response: {
+            attestationObject: this.bufferToBase64url(credential.response.attestationObject),
+            clientDataJSON: this.bufferToBase64url(credential.response.clientDataJSON),
+            transports: credential.response.getTransports ? credential.response.getTransports() : [],
+          },
+        },
+      }});
+      this.user = await this.api('/auth/me');
+      this.toast('Passkey registered', 'success');
+      this.showSettingsTab('profile');
+    } catch (e) {
+      if (e.name !== 'NotAllowedError') this.toast(e.message || 'Failed to register passkey', 'error');
+    }
+  },
+
+  async deletePasskey(id) {
+    if (!confirm('Delete this passkey?')) return;
+    try {
+      await this.api(`/auth/passkey/credentials/${id}`, { method: 'DELETE' });
+      this.user = await this.api('/auth/me');
+      this.toast('Passkey deleted', 'success');
+      this.showSettingsTab('profile');
+    } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  async setPasskeyMode(mode) {
+    try {
+      await this.api('/auth/passkey/mode', { method: 'PUT', body: { mode } });
+      this.user.passkey_mode = mode;
+      this.toast('Passkey mode updated', 'success');
+    } catch (e) {
+      this.toast(e.message, 'error');
+      this.showSettingsTab('profile');
+    }
+  },
+
+  async loadLinkedAccounts() {
+    const container = document.getElementById('linked-accounts');
+    if (!container) return;
+    let googleEnabled = false;
+    try {
+      const gs = await fetch('/api/auth/google/status').then(r => r.json());
+      googleEnabled = gs.enabled;
+    } catch (e) {}
+
+    let html = '';
+    if (googleEnabled || this.user.google_linked) {
+      html += `<div class="linked-account-item">
+        <div style="display:flex;align-items:center;gap:8px">
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#34A853" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#FBBC05" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          <span>Google</span>
+        </div>
+        ${this.user.google_linked
+          ? '<button class="btn-sm btn-secondary" onclick="App.unlinkGoogle()">Unlink</button>'
+          : '<button class="btn-sm btn-primary" onclick="window.location.href=\'/api/auth/google\'">Link Google</button>'}
+      </div>`;
+    }
+    if (!html) html = '<p style="color:var(--text-muted);font-size:13px">No linked account options available</p>';
+    container.innerHTML = html;
+  },
+
+  async unlinkGoogle() {
+    if (!confirm('Unlink your Google account?')) return;
+    try {
+      await this.api('/auth/google/link', { method: 'DELETE' });
+      this.user = await this.api('/auth/me');
+      this.toast('Google account unlinked', 'success');
+      this.showSettingsTab('profile');
+    } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  async toggleGoogleAuth(enabled) {
+    try {
+      await this.api('/settings/google-auth', { method: 'PUT', body: { enabled } });
+      this.toast(`Google Sign-In ${enabled ? 'enabled' : 'disabled'}`, 'success');
     } catch (e) { this.toast(e.message, 'error'); }
   },
 
