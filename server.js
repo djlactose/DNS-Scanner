@@ -286,6 +286,135 @@ app.delete('/api/users/:id', requireAdmin, validateId, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed to delete user' }); }
 });
 
+// ─── User invites (admin) ───
+app.post('/api/users/invite', requireAdmin, async (req, res) => {
+  try {
+    const { email, role } = req.body;
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email is required' });
+    const inviteRole = role && Object.values(USER_ROLES).includes(role) ? role : USER_ROLES.VIEWER;
+
+    // Check if email already belongs to an existing user
+    const existing = await query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'A user with this email already exists' });
+
+    // Invalidate any pending invites for this email
+    await query('UPDATE user_invites SET accepted = TRUE WHERE email = $1 AND accepted = FALSE', [email]);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    await query(
+      'INSERT INTO user_invites (email, role, token_hash, invited_by, expires_at) VALUES ($1, $2, $3, $4, $5)',
+      [email, inviteRole, tokenHash, req.session.userId, expiresAt]
+    );
+
+    // Send invite email
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    const inviteUrl = `${proto}://${host}/#accept-invite/${token}`;
+    const html = `
+      <h2>You're Invited to DNS Scanner</h2>
+      <p>You've been invited to join DNS Scanner as a <strong>${inviteRole}</strong>.</p>
+      <p><a href="${inviteUrl}" style="display:inline-block;padding:10px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px;">Accept Invitation</a></p>
+      <p>Or copy this link: ${inviteUrl}</p>
+      <p>This invitation expires in 7 days.</p>
+    `;
+    try {
+      const { sendEmail } = require('./notifier');
+      await sendEmail(email, 'DNS Scanner - You\'re Invited', html);
+      console.log(`[AUTH] Invite email sent to ${email} by admin ${req.session.userId}`);
+    } catch (emailErr) {
+      console.error('[AUTH] Failed to send invite email:', emailErr.message);
+      // Still return the invite URL so admin can share it manually
+      return res.status(201).json({ ok: true, inviteUrl, warning: 'Invite created but email could not be sent. Share the link manually.' });
+    }
+
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] Invite error:', err.message);
+    res.status(500).json({ error: 'Failed to create invite' });
+  }
+});
+
+app.get('/api/users/invites', requireAdmin, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT ui.id, ui.email, ui.role, ui.accepted, ui.expires_at, ui.created_at,
+             u.username as invited_by_username
+      FROM user_invites ui
+      LEFT JOIN users u ON u.id = ui.invited_by
+      WHERE ui.accepted = FALSE AND ui.expires_at > NOW()
+      ORDER BY ui.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch invites' }); }
+});
+
+app.delete('/api/users/invites/:id', requireAdmin, validateId, async (req, res) => {
+  try {
+    await query('DELETE FROM user_invites WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Failed to revoke invite' }); }
+});
+
+app.get('/api/auth/invite/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({ error: 'Invalid invite link' });
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const result = await query(
+      'SELECT email, role FROM user_invites WHERE token_hash = $1 AND accepted = FALSE AND expires_at > NOW()',
+      [tokenHash]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Invalid or expired invitation' });
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: 'Failed to validate invite' }); }
+});
+
+app.post('/api/auth/accept-invite', registerLimiter, async (req, res) => {
+  try {
+    const { token, username, password } = req.body;
+    if (!token || !username || !password) return res.status(400).json({ error: 'Token, username, and password are required' });
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) return res.status(400).json({ error: 'Username must be 3-30 alphanumeric characters or underscores' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const invite = await query(
+      'SELECT * FROM user_invites WHERE token_hash = $1 AND accepted = FALSE AND expires_at > NOW()',
+      [tokenHash]
+    );
+    if (invite.rows.length === 0) return res.status(400).json({ error: 'Invalid or expired invitation' });
+
+    const inv = invite.rows[0];
+    const existing = await query('SELECT id FROM users WHERE username = $1', [username]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Username already taken' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const result = await query(
+      'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, username, role',
+      [username, inv.email, passwordHash, inv.role]
+    );
+    const user = result.rows[0];
+    await query('INSERT INTO notification_settings (user_id) VALUES ($1)', [user.id]);
+    await query('UPDATE user_invites SET accepted = TRUE WHERE id = $1', [inv.id]);
+
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ error: 'Session error' });
+      req.session.userId = user.id;
+      req.session.role = user.role;
+      req.session.save((saveErr) => {
+        if (saveErr) return res.status(500).json({ error: 'Session save error' });
+        console.log(`[AUTH] User registered via invite: ${username} (${user.role})`);
+        res.status(201).json({ id: user.id, username: user.username, role: user.role });
+      });
+    });
+  } catch (err) {
+    console.error('[AUTH] Accept invite error:', err.message);
+    res.status(500).json({ error: 'Failed to accept invitation' });
+  }
+});
+
 app.put('/api/auth/password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -1589,7 +1718,21 @@ app.use((err, req, res, next) => {
 // as long as middleware is registered before listen().
 async function start() {
   validateEnv();
-  await initSchema();
+
+  // Retry DB connection (Swarm ignores depends_on, so DB may not be ready yet)
+  const MAX_RETRIES = 20;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await initSchema();
+      break;
+    } catch (err) {
+      if (attempt >= MAX_RETRIES) throw err;
+      const delay = Math.min(attempt * 1000, 5000);
+      console.log(`[DB] Connection attempt ${attempt}/${MAX_RETRIES} failed (${err.code || err.message}), retrying in ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+
   setupSession();
 
   // Clean up expired WebAuthn challenges every 10 minutes

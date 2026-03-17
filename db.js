@@ -247,6 +247,22 @@ async function initSchema() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries ON webhook_deliveries(webhook_id, delivered_at DESC)`);
 
+    // ─── User invites ───
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_invites (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        role VARCHAR(10) NOT NULL DEFAULT 'viewer',
+        token_hash VARCHAR(64) NOT NULL,
+        invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        accepted BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_invites_token ON user_invites(token_hash)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_invites_email ON user_invites(email)`);
+
     // ─── WebAuthn / Passkey tables ───
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_credentials (

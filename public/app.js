@@ -58,7 +58,7 @@ const App = {
     const parts = hash.split('/');
     this.currentRoute = parts[0];
 
-    const publicRoutes = ['login', 'register', 'forgot-password', 'reset-password'];
+    const publicRoutes = ['login', 'register', 'forgot-password', 'reset-password', 'accept-invite'];
     if (!this.user && !publicRoutes.includes(parts[0])) {
       return this.navigate('login');
     }
@@ -73,6 +73,7 @@ const App = {
       case 'register': this.renderRegister(); break;
       case 'forgot-password': this.renderForgotPassword(); break;
       case 'reset-password': this.renderResetPassword(parts[1]); break;
+      case 'accept-invite': this.renderAcceptInvite(parts[1]); break;
       case 'dashboard': this.renderDashboard(); break;
       case 'domains': parts[1] ? this.renderDomainDetail(parts[1]) : this.renderDomains(); break;
       case 'settings': this.renderSettings(); break;
@@ -396,6 +397,53 @@ const App = {
       btn.disabled = false;
       btn.textContent = 'Reset Password';
     }
+  },
+
+  async renderAcceptInvite(token) {
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+      document.getElementById('app').innerHTML = `
+        <div class="auth-page"><div class="auth-card card">
+          <h1>Invalid Invitation</h1><p>This invite link is invalid or malformed.</p>
+          <div class="auth-switch"><a href="#login">Go to sign in</a></div>
+        </div></div>`;
+      return;
+    }
+    try {
+      const invite = await fetch(`/api/auth/invite/${token}`).then(r => { if (!r.ok) throw new Error((r.json && r.json().then ? 'error' : 'Invalid invitation')); return r.json(); });
+      document.getElementById('app').innerHTML = `
+        <div class="auth-page"><div class="auth-card card">
+          <h1>Accept Invitation</h1>
+          <p>You've been invited as a <strong>${this.esc(invite.role)}</strong>.</p>
+          <div class="form-group"><label>Email</label><input value="${this.esc(invite.email)}" disabled></div>
+          <div class="form-group"><label>Username</label><input id="invite-user" autocomplete="username"></div>
+          <div class="form-group"><label>Password (min 8 chars)</label><input id="invite-pass" type="password" autocomplete="new-password"></div>
+          <div id="invite-error" class="form-error" style="display:none"></div>
+          <button class="btn-primary" onclick="App.doAcceptInvite('${token}')">Create Account</button>
+          <div class="auth-switch">Already have an account? <a href="#login">Sign in</a></div>
+        </div></div>`;
+      document.getElementById('invite-user').focus();
+    } catch (e) {
+      document.getElementById('app').innerHTML = `
+        <div class="auth-page"><div class="auth-card card">
+          <h1>Invitation Expired</h1><p>This invitation is no longer valid. Please ask an admin for a new invite.</p>
+          <div class="auth-switch"><a href="#login">Go to sign in</a></div>
+        </div></div>`;
+    }
+  },
+
+  async doAcceptInvite(token) {
+    const errEl = document.getElementById('invite-error');
+    try {
+      errEl.style.display = 'none';
+      this.user = await this.api('/auth/accept-invite', { method: 'POST', body: {
+        token,
+        username: document.getElementById('invite-user').value,
+        password: document.getElementById('invite-pass').value,
+      }});
+      this.connectSSE();
+      this.navigate('dashboard');
+      this.toast('Welcome! Your account has been created.', 'success');
+    } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
   },
 
   async logout() {
@@ -1122,8 +1170,20 @@ const App = {
 
       case 'users':
         try {
-          const users = await this.api('/users');
-          let uhtml = `<h3 style="margin-bottom:16px">Users</h3><div class="card" style="overflow-x:auto">
+          const [users, invites] = await Promise.all([this.api('/users'), this.api('/users/invites')]);
+          let uhtml = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3>Users</h3><button class="btn-primary btn-sm" onclick="App.showInviteUser()">+ Invite User</button></div>`;
+          if (invites.length > 0) {
+            uhtml += `<h4 style="margin-bottom:8px;color:var(--text-muted)">Pending Invitations</h4>`;
+            for (const inv of invites) {
+              uhtml += `<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+                <div><strong>${this.esc(inv.email)}</strong> <span class="status-badge info">${this.esc(inv.role)}</span>
+                  <div style="font-size:12px;color:var(--text-muted)">Invited by ${this.esc(inv.invited_by_username || 'unknown')} &middot; Expires ${this.formatDate(inv.expires_at)}</div>
+                </div>
+                <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.revokeInvite(${inv.id})">&#10005;</button>
+              </div>`;
+            }
+          }
+          uhtml += `<div class="card" style="overflow-x:auto;margin-top:16px">
             <table class="records-table"><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody>`;
           for (const u of users) {
             uhtml += `<tr><td>${this.esc(u.username)}</td><td>${this.esc(u.email || '-')}</td>
@@ -1355,6 +1415,32 @@ const App = {
   async deleteUser(id, name) {
     if (!confirm(`Delete user ${name}?`)) return;
     try { await this.api(`/users/${id}`, { method: 'DELETE' }); this.toast('User deleted', 'success'); this.showSettingsTab('users'); } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  showInviteUser() {
+    this.showModal('Invite User', `
+      <div class="form-group"><label>Email</label><input id="modal-invite-email" type="email" placeholder="user@example.com"></div>
+      <div class="form-group"><label>Role</label><select id="modal-invite-role">
+        <option value="viewer">Viewer</option>
+        <option value="admin">Admin</option>
+      </select></div>
+    `, async () => {
+      const result = await this.api('/users/invite', { method: 'POST', body: {
+        email: document.getElementById('modal-invite-email').value,
+        role: document.getElementById('modal-invite-role').value,
+      }});
+      if (result.warning) {
+        this.toast(result.warning, 'warning');
+      } else {
+        this.toast('Invitation sent', 'success');
+      }
+      this.showSettingsTab('users');
+    }, 'Send Invite');
+  },
+
+  async revokeInvite(id) {
+    if (!confirm('Revoke this invitation?')) return;
+    try { await this.api(`/users/invites/${id}`, { method: 'DELETE' }); this.toast('Invite revoked', 'success'); this.showSettingsTab('users'); } catch (e) { this.toast(e.message, 'error'); }
   },
 
   showAddTag() {
