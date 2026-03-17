@@ -58,10 +58,11 @@ const App = {
     const parts = hash.split('/');
     this.currentRoute = parts[0];
 
-    if (!this.user && parts[0] !== 'login' && parts[0] !== 'register') {
+    const publicRoutes = ['login', 'register', 'forgot-password', 'reset-password'];
+    if (!this.user && !publicRoutes.includes(parts[0])) {
       return this.navigate('login');
     }
-    if (this.user && (parts[0] === 'login' || parts[0] === 'register')) {
+    if (this.user && publicRoutes.includes(parts[0])) {
       return this.navigate('dashboard');
     }
 
@@ -70,6 +71,8 @@ const App = {
     switch (parts[0]) {
       case 'login': this.renderLogin(); break;
       case 'register': this.renderRegister(); break;
+      case 'forgot-password': this.renderForgotPassword(); break;
+      case 'reset-password': this.renderResetPassword(parts[1]); break;
       case 'dashboard': this.renderDashboard(); break;
       case 'domains': parts[1] ? this.renderDomainDetail(parts[1]) : this.renderDomains(); break;
       case 'settings': this.renderSettings(); break;
@@ -159,6 +162,7 @@ const App = {
         <div class="form-group"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password"></div>
         <div id="login-error" class="form-error" style="display:none"></div>
         <button class="btn-primary" onclick="App.doLogin()">Sign In</button>
+        <div class="auth-switch"><a href="#forgot-password">Forgot password?</a></div>
         <div class="auth-switch">Don't have an account? <a href="#register">Register</a></div>
       </div></div>`;
     document.getElementById('login-user').focus();
@@ -201,6 +205,81 @@ const App = {
       this.navigate(this.user.role === 'admin' ? 'domains' : 'dashboard');
       this.toast(`Welcome! You are ${this.user.role === 'admin' ? 'an admin — add your first domain below' : 'a viewer'}.`, 'success');
     } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  },
+
+  renderForgotPassword() {
+    document.getElementById('app').innerHTML = `
+      <div class="auth-page"><div class="auth-card card">
+        <h1>Reset Password</h1><p>Enter your email address to receive a reset link</p>
+        <div class="form-group"><label>Email</label><input id="forgot-email" type="email" autocomplete="email"></div>
+        <div id="forgot-error" class="form-error" style="display:none"></div>
+        <div id="forgot-success" class="form-success" style="display:none"></div>
+        <button class="btn-primary" id="forgot-btn" onclick="App.doForgotPassword()">Send Reset Link</button>
+        <div class="auth-switch"><a href="#login">Back to sign in</a></div>
+      </div></div>`;
+    document.getElementById('forgot-email').focus();
+    document.getElementById('forgot-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') App.doForgotPassword(); });
+  },
+
+  async doForgotPassword() {
+    const errEl = document.getElementById('forgot-error');
+    const successEl = document.getElementById('forgot-success');
+    const btn = document.getElementById('forgot-btn');
+    try {
+      errEl.style.display = 'none';
+      successEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      const result = await this.api('/auth/forgot-password', { method: 'POST', body: { email: document.getElementById('forgot-email').value } });
+      successEl.textContent = result.message || 'If an account with that email exists, a reset link has been sent.';
+      successEl.style.display = 'block';
+      btn.textContent = 'Sent';
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Send Reset Link';
+    }
+  },
+
+  renderResetPassword(token) {
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return this.navigate('forgot-password');
+    document.getElementById('app').innerHTML = `
+      <div class="auth-page"><div class="auth-card card">
+        <h1>Set New Password</h1><p>Enter your new password below</p>
+        <div class="form-group"><label>New Password (min 8 chars)</label><input id="reset-pass" type="password" autocomplete="new-password"></div>
+        <div class="form-group"><label>Confirm Password</label><input id="reset-pass-confirm" type="password" autocomplete="new-password"></div>
+        <div id="reset-error" class="form-error" style="display:none"></div>
+        <div id="reset-success" class="form-success" style="display:none"></div>
+        <button class="btn-primary" id="reset-btn" onclick="App.doResetPassword('${token}')">Reset Password</button>
+        <div class="auth-switch"><a href="#login">Back to sign in</a></div>
+      </div></div>`;
+    document.getElementById('reset-pass').focus();
+    document.getElementById('reset-pass-confirm').addEventListener('keydown', (e) => { if (e.key === 'Enter') App.doResetPassword(token); });
+  },
+
+  async doResetPassword(token) {
+    const errEl = document.getElementById('reset-error');
+    const successEl = document.getElementById('reset-success');
+    const btn = document.getElementById('reset-btn');
+    const pass = document.getElementById('reset-pass').value;
+    const confirm = document.getElementById('reset-pass-confirm').value;
+    errEl.style.display = 'none';
+    successEl.style.display = 'none';
+    if (pass !== confirm) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
+    try {
+      btn.disabled = true;
+      btn.textContent = 'Resetting...';
+      await this.api('/auth/reset-password', { method: 'POST', body: { token, newPassword: pass } });
+      successEl.textContent = 'Password reset successfully. Redirecting to login...';
+      successEl.style.display = 'block';
+      setTimeout(() => this.navigate('login'), 2000);
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Reset Password';
+    }
   },
 
   async logout() {

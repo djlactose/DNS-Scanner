@@ -55,6 +55,7 @@ const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 15, standardHead
 const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 3, keyGenerator: (req) => req.ip });
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 100, standardHeaders: true, legacyHeaders: false });
 const scanLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyGenerator: (req) => req.session?.userId?.toString() || req.ip });
+const resetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, keyGenerator: (req) => req.ip });
 
 // Session middleware reference (set up in start())
 let sessionMiddleware;
@@ -272,6 +273,79 @@ app.put('/api/auth/password', requireAuth, async (req, res) => {
     console.log(`[AUTH] Password changed for user ${req.session.userId}`);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to change password' }); }
+});
+
+// ─── Password reset ───
+app.post('/api/auth/forgot-password', resetLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    // Always return success to prevent user enumeration
+    const result = await query('SELECT id, username FROM users WHERE email = $1', [email]);
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+      // Invalidate any existing tokens for this user
+      await query('UPDATE password_reset_tokens SET used = TRUE WHERE user_id = $1 AND used = FALSE', [user.id]);
+      // Generate a secure token
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await query(
+        'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+        [user.id, tokenHash, expiresAt]
+      );
+      // Build reset link
+      const proto = req.get('x-forwarded-proto') || req.protocol;
+      const host = req.get('x-forwarded-host') || req.get('host');
+      const resetUrl = `${proto}://${host}/#reset-password/${token}`;
+      const html = `
+        <h2>Password Reset</h2>
+        <p>Hi ${user.username},</p>
+        <p>A password reset was requested for your DNS Scanner account.</p>
+        <p><a href="${resetUrl}" style="display:inline-block;padding:10px 24px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px;">Reset Password</a></p>
+        <p>Or copy this link: ${resetUrl}</p>
+        <p>This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
+      `;
+      try {
+        const { sendEmail } = require('./notifier');
+        await sendEmail(email, 'DNS Scanner - Password Reset', html);
+        console.log(`[AUTH] Password reset email sent for user ${user.id}`);
+      } catch (emailErr) {
+        console.error('[AUTH] Failed to send reset email:', emailErr.message);
+      }
+    }
+    res.json({ ok: true, message: 'If an account with that email exists, a reset link has been sent.' });
+  } catch (err) {
+    console.error('[AUTH] Forgot password error:', err.message);
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+app.post('/api/auth/reset-password', resetLimiter, async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required' });
+    if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const result = await query(
+      'SELECT * FROM password_reset_tokens WHERE token_hash = $1 AND used = FALSE AND expires_at > NOW()',
+      [tokenHash]
+    );
+    if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid or expired reset link' });
+
+    const resetToken = result.rows[0];
+    const hash = await bcrypt.hash(newPassword, 12);
+    await query('UPDATE users SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL WHERE id = $2', [hash, resetToken.user_id]);
+    await query('UPDATE password_reset_tokens SET used = TRUE WHERE id = $1', [resetToken.id]);
+    // Invalidate all sessions for this user
+    await query("DELETE FROM session WHERE sess::text LIKE $1", [`%"userId":${resetToken.user_id}%`]);
+    console.log(`[AUTH] Password reset completed for user ${resetToken.user_id}`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[AUTH] Reset password error:', err.message);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 // ─── Tags ───
