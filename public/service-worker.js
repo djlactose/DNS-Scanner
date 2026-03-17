@@ -1,5 +1,5 @@
-const CACHE_NAME = 'dns-scanner-v4';
-const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json'];
+const CACHE_NAME = 'dns-scanner-v5';
+const STATIC_ASSETS = ['/', '/index.html', '/styles.css', '/manifest.json', '/js/core.js', '/js/auth.js', '/js/dashboard.js', '/js/domains.js', '/js/settings.js'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS)));

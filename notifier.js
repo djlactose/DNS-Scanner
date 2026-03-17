@@ -63,9 +63,12 @@ async function getSmtpTransport() {
 }
 
 async function sendEmail(to, subject, html) {
+  const config = await query('SELECT * FROM smtp_config LIMIT 1');
+  if (config.rows.length === 0) throw new Error('SMTP not configured');
   const transport = await getSmtpTransport();
   if (!transport) throw new Error('SMTP not configured');
-  await transport.sendMail({ from: '"DNS Scanner" <noreply@dns-scanner.local>', to, subject, html });
+  const from = config.rows[0].smtp_from || '"DNS Scanner" <noreply@dns-scanner.local>';
+  await transport.sendMail({ from, to, subject, html });
 }
 
 async function deliverWebhook(webhook, eventType, data) {

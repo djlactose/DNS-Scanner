@@ -321,11 +321,46 @@ async function initSchema() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_webauthn_challenges_session ON webauthn_challenges(session_id)`);
 
+    // ─── Audit log ───
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS audit_log (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        action VARCHAR(50) NOT NULL,
+        target_type VARCHAR(30),
+        target_id INTEGER,
+        details JSONB,
+        ip INET,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id)`);
+
+    // ─── API keys ───
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        key_prefix VARCHAR(8) NOT NULL,
+        key_hash VARCHAR(64) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        last_used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)`);
+
     // ─── Add Google OAuth and passkey columns to users ───
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS passkey_mode VARCHAR(20) DEFAULT 'either'`);
     await client.query(`DO $$ BEGIN ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL; EXCEPTION WHEN others THEN NULL; END $$`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL`);
+
+    // ─── Add allowed_tags and smtp_from columns ───
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_tags JSONB`);
+    await client.query(`ALTER TABLE smtp_config ADD COLUMN IF NOT EXISTS smtp_from VARCHAR(255)`);
 
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');

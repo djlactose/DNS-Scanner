@@ -40,6 +40,9 @@ async function checkScheduledScans() {
     const runningScans = await query('SELECT COUNT(*) as count FROM scans WHERE status = $1', [SCAN_STATUS.RUNNING]);
     let running = parseInt(runningScans.rows[0].count);
 
+    // Update worker heartbeat
+    await query("INSERT INTO app_settings (key, value) VALUES ('worker_last_scan_check', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
+
     for (const domain of domains.rows) {
       if (running >= MAX_CONCURRENT_SCANS) break;
 
@@ -74,6 +77,7 @@ async function checkWhoisUpdates() {
     if (!(await acquireLock(lockKey))) return;
 
     try {
+      await query("INSERT INTO app_settings (key, value) VALUES ('worker_last_whois_check', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
       const domains = await query(`
         SELECT d.* FROM domains d
         WHERE d.enabled = TRUE
@@ -103,6 +107,7 @@ async function cleanupOldData() {
     if (!(await acquireLock(lockKey))) return;
 
     try {
+      await query("INSERT INTO app_settings (key, value) VALUES ('worker_last_cleanup', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
       const result = await query("DELETE FROM health_checks WHERE checked_at < NOW() - INTERVAL '90 days'");
       if (result.rowCount > 0) console.log(`[WORKER] Cleaned up ${result.rowCount} old health checks`);
 

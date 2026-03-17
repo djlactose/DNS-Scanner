@@ -1,24 +1,25 @@
 {
   "name": "dns-scanner",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "DNS Scanner PWA - Monitor DNS records and detect dead endpoints",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "worker": "node worker.js"
+    "worker": "node worker.js",
+    "test": "node --test test/api.test.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
     "connect-pg-simple": "^10.0.0",
-    "express": "^4.21.0",
-    "express-rate-limit": "^7.4.0",
-    "express-session": "^1.18.0",
-    "compression": "^1.7.4",
-    "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.15",
-    "pg": "^8.13.0",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "compression": "^1.8.0",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^6.10.0",
+    "pg": "^8.14.0",
     "@simplewebauthn/server": "^11.0.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.7.0"
   },
   "engines": {
     "node": ">=22.0.0"
