@@ -31,6 +31,17 @@ Object.assign(App, {
       // Worker health indicator
       html += `<div id="worker-health" style="margin-bottom:16px"></div>`;
 
+      // IPv6 connectivity warning
+      if (data.ipv6_available === false) {
+        html += `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-left:4px solid var(--status-warning);margin-bottom:16px">
+          <div style="font-size:18px">&#9888;</div>
+          <div>
+            <div style="font-weight:600;font-size:14px">IPv6 Unavailable</div>
+            <div style="font-size:12px;color:var(--text-secondary)">This host lacks IPv6 connectivity. AAAA record health checks are skipped and shown as &quot;No IPv6&quot; instead.</div>
+          </div>
+        </div>`;
+      }
+
       if (deadCount > 0) {
         html += `<div class="section-header">Dead Records Requiring Attention</div>`;
         for (const r of data.dead_records) {

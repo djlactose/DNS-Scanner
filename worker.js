@@ -1,7 +1,7 @@
 'use strict';
 
 const { query, initSchema } = require('./db');
-const { performScan } = require('./scanner');
+const { performScan, checkIPv6Connectivity } = require('./scanner');
 const { updateWhoisForDomain } = require('./whois');
 const { SCAN_STATUS, SCAN_TRIGGER, MAX_CONCURRENT_SCANS } = require('./constants');
 
@@ -27,6 +27,9 @@ async function releaseLock(key) {
 
 async function checkScheduledScans() {
   try {
+    // Re-check IPv6 connectivity each scan cycle
+    await checkIPv6Connectivity();
+
     const domains = await query(`
       SELECT d.* FROM domains d
       WHERE d.enabled = TRUE

@@ -13,6 +13,34 @@ const {
   PRIVATE_RANGES_V4,
 } = require('./constants');
 
+// ─── IPv6 connectivity detection ───
+let _hasIPv6 = null; // null = untested, true/false after check
+
+async function checkIPv6Connectivity() {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(3000);
+    const done = (result) => {
+      socket.destroy();
+      _hasIPv6 = result;
+      console.log(`[SCANNER] IPv6 connectivity: ${result ? 'available' : 'unavailable'}`);
+      // Persist to app_settings (non-critical)
+      query(
+        "INSERT INTO app_settings (key, value) VALUES ('ipv6_available', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+        [String(result)]
+      ).catch(() => {});
+      resolve(result);
+    };
+    socket.connect(53, '2001:4860:4860::8888', () => done(true));
+    socket.on('error', () => done(false));
+    socket.on('timeout', () => done(false));
+  });
+}
+
+function hasIPv6() {
+  return _hasIPv6;
+}
+
 class Semaphore {
   constructor(max) { this.max = max; this.count = 0; this.queue = []; }
   async acquire() {
@@ -208,8 +236,12 @@ async function getSSLInfo(host, port = 443) {
 async function icmpPing(host) {
   return new Promise((resolve) => {
     const isWin = process.platform === 'win32';
-    const args = isWin ? ['-n', '1', '-w', '5000', host] : ['-c', '1', '-W', '5', host];
-    execFile('ping', args, { timeout: HEALTH_CHECK_TIMEOUT_MS }, (err, stdout) => {
+    const isIPv6 = host.includes(':');
+    const cmd = isWin ? 'ping' : (isIPv6 ? 'ping6' : 'ping');
+    const args = isWin
+      ? [isIPv6 ? '-6' : '-4', '-n', '1', '-w', '5000', host]
+      : ['-c', '1', '-W', '5', host];
+    execFile(cmd, args, { timeout: HEALTH_CHECK_TIMEOUT_MS }, (err, stdout) => {
       if (err) return resolve(false);
       resolve(!stdout.includes('100% packet loss') && !stdout.includes('unreachable'));
     });
@@ -266,6 +298,15 @@ async function healthCheckRecord(record, domain) {
     result.status = HEALTH_STATUS.SKIPPED;
     result.errorMessage = 'Private IP range - scanning blocked';
     result.checkMethod = 'ssrf_blocked';
+    return result;
+  }
+
+  // Skip AAAA health checks when host lacks IPv6 connectivity
+  if (record.record_type === 'AAAA' && _hasIPv6 === false) {
+    result.status = HEALTH_STATUS.NO_IPV6;
+    result.errorMessage = 'Host lacks IPv6 connectivity - cannot verify AAAA record';
+    result.checkMethod = 'ipv6_unavailable';
+    result.responseMs = Date.now() - startTime;
     return result;
   }
 
@@ -499,4 +540,4 @@ async function performScan(domain, scanId) {
   }
 }
 
-module.exports = { performScan, enumerateDNS, healthCheckRecord };
+module.exports = { performScan, enumerateDNS, healthCheckRecord, checkIPv6Connectivity, hasIPv6 };

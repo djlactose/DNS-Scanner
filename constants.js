@@ -9,6 +9,7 @@ const HEALTH_STATUS = {
   ERROR: 'error',
   SKIPPED: 'skipped',
   TAKEOVER_RISK: 'takeover_risk',
+  NO_IPV6: 'no_ipv6',
 };
 
 const SCAN_STATUS = {

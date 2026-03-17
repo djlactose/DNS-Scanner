@@ -60,12 +60,16 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       WHERE dr.removed_at IS NULL AND hc.status = 'alive' ${domainFilter}
     `, params);
 
+    const ipv6Result = await query("SELECT value FROM app_settings WHERE key = 'ipv6_available'");
+    const ipv6Available = ipv6Result.rows.length > 0 ? ipv6Result.rows[0].value === 'true' : null;
+
     res.json({
       total_domains: parseInt(stats.rows[0].total_domains),
       total_records: parseInt(stats.rows[0].total_records),
       alive_records: parseInt(aliveCount.rows[0].count),
       dead_records: deadRecords.rows,
       recent_changes: recentChanges.rows,
+      ipv6_available: ipv6Available,
     });
   } catch (err) {
     console.error('[DASHBOARD] Error:', err.message);
