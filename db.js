@@ -27,7 +27,33 @@ function query(text, params) {
   return getPool().query(text, params);
 }
 
+async function ensureDatabase() {
+  const dbName = process.env.DB_NAME || 'dnsscanner';
+  const dbUser = process.env.DB_USER || 'dnsscanner';
+  const adminPool = new Pool({
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    database: 'postgres',
+    user: dbUser,
+    password: process.env.DB_PASSWORD,
+    max: 1,
+    connectionTimeoutMillis: 5000,
+  });
+  try {
+    const { rows } = await adminPool.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1', [dbName]
+    );
+    if (rows.length === 0) {
+      await adminPool.query(`CREATE DATABASE "${dbName}"`);
+      console.log(`[DB] Created database "${dbName}"`);
+    }
+  } finally {
+    await adminPool.end();
+  }
+}
+
 async function initSchema() {
+  await ensureDatabase();
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');

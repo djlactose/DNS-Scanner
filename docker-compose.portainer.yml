@@ -1,6 +1,13 @@
 services:
   db:
     image: postgres:16-alpine
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "[db] Writing trust pg_hba.conf to /tmp"
+        printf 'local all all trust\nhost all all 0.0.0.0/0 trust\nhost all all ::/0 trust\n' > /tmp/pg_hba_override.conf
+        exec docker-entrypoint.sh postgres -c hba_file=/tmp/pg_hba_override.conf
     environment:
       POSTGRES_DB: dnsscanner
       POSTGRES_USER: dnsscanner
