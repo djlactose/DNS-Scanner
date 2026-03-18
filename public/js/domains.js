@@ -499,6 +499,24 @@ Object.assign(App, {
   },
 
   // ─── Record Detail Drawer ───
+  async portScanRecord(recordId) {
+    try {
+      this.toast('Full port scan started...', 'info');
+      const result = await this.api(`/records/${recordId}/port-scan`, { method: 'POST' });
+      this.toast(`Port scan complete: ${result.portsOpen.length} open ports found`, 'success');
+      // Refresh the detail view
+      this.closeDrawer();
+      const domainId = this._currentDomain?.id;
+      if (domainId) {
+        this._currentRecords = await this.api(`/domains/${domainId}/records`);
+        this.renderRecordsTable();
+      }
+      this.showRecordDetail(recordId);
+    } catch (e) {
+      this.toast(`Port scan failed: ${e.message}`, 'error');
+    }
+  },
+
   async showRecordDetail(recordId) {
     const record = this._currentRecords?.find(r => r.id === recordId);
     if (!record) return;
@@ -534,15 +552,17 @@ Object.assign(App, {
 
     // Ports
     const ports = h.ports_open || [];
-    const allPorts = [443, 80, 22, 8443, 8080, 3389, 21];
+    const knownPorts = record.known_ports || [];
+    const portNames = {21:'FTP',22:'SSH',23:'Telnet',25:'SMTP',53:'DNS',80:'HTTP',110:'POP3',111:'RPCBind',135:'MSRPC',139:'NetBIOS',143:'IMAP',389:'LDAP',443:'HTTPS',445:'SMB',465:'SMTPS',514:'Syslog',587:'Submission',636:'LDAPS',993:'IMAPS',995:'POP3S',1433:'MSSQL',1521:'Oracle',2049:'NFS',2082:'cPanel',2083:'cPanel SSL',2086:'WHM',2087:'WHM SSL',3306:'MySQL',3389:'RDP',5432:'PostgreSQL',5900:'VNC',5985:'WinRM',6379:'Redis',6443:'K8s API',8000:'HTTP Alt',8080:'HTTP Proxy',8443:'HTTPS Alt',8888:'HTTP Alt2',9090:'Prometheus',9200:'Elasticsearch',9443:'HTTPS Alt2',27017:'MongoDB'};
     if (!['TXT', 'CAA', 'SOA'].includes(record.record_type)) {
-      drawerHtml += `<div class="drawer-section"><h4>Ports Checked</h4><div class="port-list">`;
-      for (const p of allPorts) {
+      const displayPorts = knownPorts.length > 0 ? knownPorts : [443, 80, 22, 8443, 8080, 3389, 21];
+      drawerHtml += `<div class="drawer-section"><h4>Open Ports ${record.last_port_scan ? `<span style="font-weight:normal;font-size:12px;color:var(--text-muted)">(scanned ${this.timeAgo(record.last_port_scan)})</span>` : ''}</h4><div class="port-list">`;
+      for (const p of displayPorts) {
         const open = ports.includes(p);
-        const name = { 443: 'HTTPS', 80: 'HTTP', 22: 'SSH', 8443: '8443', 8080: '8080', 3389: 'RDP', 21: 'FTP' }[p] || p;
+        const name = portNames[p] || p;
         drawerHtml += `<span class="port-badge ${open ? 'open' : 'closed'}">${name} (${p}) ${open ? '&#10004;' : '&#10008;'}</span>`;
       }
-      drawerHtml += `</div></div>`;
+      drawerHtml += `</div><button class="btn-sm btn-secondary" style="margin-top:8px" onclick="App.portScanRecord(${record.id})">Rescan All Ports</button></div>`;
     }
 
     // SSL

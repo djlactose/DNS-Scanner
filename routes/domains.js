@@ -358,6 +358,18 @@ router.put('/records/:id/dismiss', requireAuth, validateId, async (req, res) => 
   } catch (err) { res.status(500).json({ error: 'Failed to dismiss record' }); }
 });
 
+// ─── Port rescan ───
+router.post('/records/:id/port-scan', requireAuth, validateId, async (req, res) => {
+  try {
+    const { portScanRecord } = require('../scanner');
+    const result = await portScanRecord(parseInt(req.params.id));
+    res.json(result);
+  } catch (err) {
+    console.error('[PORT-SCAN] Error:', err.message);
+    res.status(500).json({ error: 'Port scan failed' });
+  }
+});
+
 // ─── CSV export ───
 router.get('/domains/:id/export/csv', requireAuth, validateId, async (req, res) => {
   try {

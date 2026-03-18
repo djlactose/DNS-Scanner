@@ -364,6 +364,10 @@ async function initSchema() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_tags JSONB`);
     await client.query(`ALTER TABLE smtp_config ADD COLUMN IF NOT EXISTS smtp_from VARCHAR(255)`);
 
+    // ─── Port scan columns on dns_records ───
+    await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS known_ports JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS last_port_scan TIMESTAMPTZ`);
+
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');
   } catch (err) {

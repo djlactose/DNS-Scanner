@@ -9,7 +9,7 @@ const { checkTakeover } = require('./takeover');
 const { checkPropagation } = require('./propagation');
 const {
   RECORD_TYPES, HEALTH_STATUS, SCAN_STATUS, SKIPPED_RECORD_TYPES,
-  COMMON_PORTS, MX_PORTS, PRIVATE_RANGES_V4, COMMON_SUBDOMAINS,
+  COMMON_PORTS, MX_PORTS, FULL_SCAN_PORTS, PRIVATE_RANGES_V4, COMMON_SUBDOMAINS,
 } = require('./constants');
 const { getSetting } = require('./settings-service');
 const { fetchProviderRecords } = require('./dns-providers');
@@ -458,8 +458,27 @@ async function dnsQueryCheck(nameserver) {
   });
 }
 
+async function fullPortScan(host, timeoutMs = 3000) {
+  const openPorts = [];
+  // Scan in batches of 20 to avoid too many concurrent connections
+  for (let i = 0; i < FULL_SCAN_PORTS.length; i += 20) {
+    const batch = FULL_SCAN_PORTS.slice(i, i + 20);
+    const results = await Promise.allSettled(
+      batch.map(async ({ port, name }) => {
+        const open = await tcpCheck(host, port, timeoutMs);
+        return open ? { port, name } : null;
+      })
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) openPorts.push(r.value);
+    }
+  }
+  return openPorts;
+}
+
 async function healthCheckRecord(record, domain) {
   const startTime = Date.now();
+  const needsPortScan = !record.last_port_scan || record._forcePortScan;
   const result = {
     status: HEALTH_STATUS.SKIPPED,
     statusCode: null,
@@ -514,42 +533,78 @@ async function healthCheckRecord(record, domain) {
 
   try {
     if (record.record_type === 'A' || record.record_type === 'AAAA' || record.record_type === 'CNAME') {
-      // Check HTTPS
-      const httpsResult = await httpCheck(targetHost, 443, true);
-      if (httpsResult.alive) {
-        result.status = HEALTH_STATUS.ALIVE;
-        result.statusCode = httpsResult.statusCode;
-        result.checkMethod = 'https';
-        result.portsOpen.push(443);
-        // Get SSL info
-        const ssl = await getSSLInfo(targetHost);
-        if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
-      }
 
-      // Check HTTP
-      if (result.status !== HEALTH_STATUS.ALIVE) {
-        const httpResult = await httpCheck(targetHost, 80, false);
-        if (httpResult.alive) {
+      if (needsPortScan) {
+        // ─── Full port scan (first discovery or manual rescan) ───
+        const discovered = await fullPortScan(targetIP);
+        result.portsOpen = discovered.map(p => p.port);
+        result._knownPorts = discovered; // pass to caller for DB storage
+
+        // Check HTTPS specifically for SSL info
+        if (result.portsOpen.includes(443)) {
+          const httpsResult = await httpCheck(targetHost, 443, true);
+          if (httpsResult.alive) { result.statusCode = httpsResult.statusCode; result.checkMethod = 'https'; }
+          const ssl = await getSSLInfo(targetHost);
+          if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
+        } else if (result.portsOpen.includes(80)) {
+          const httpResult = await httpCheck(targetHost, 80, false);
+          if (httpResult.alive) { result.statusCode = httpResult.statusCode; result.checkMethod = 'http'; }
+        }
+
+        if (result.portsOpen.length > 0) {
           result.status = HEALTH_STATUS.ALIVE;
-          result.statusCode = httpResult.statusCode;
-          result.checkMethod = 'http';
-          result.portsOpen.push(80);
+          if (!result.checkMethod) result.checkMethod = `tcp:${result.portsOpen[0]}`;
+        } else {
+          const pingOk = await icmpPing(targetIP);
+          if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
         }
-      }
 
-      // Check common TCP ports
-      if (result.status !== HEALTH_STATUS.ALIVE) {
-        for (const { port, name } of COMMON_PORTS) {
-          if (result.portsOpen.includes(port)) continue;
+      } else {
+        // ─── Quick check: only check previously known ports ───
+        const knownPorts = (record.known_ports || []);
+
+        // Always check HTTPS/HTTP first for status code + SSL
+        if (knownPorts.includes(443)) {
+          const httpsResult = await httpCheck(targetHost, 443, true);
+          if (httpsResult.alive) {
+            result.status = HEALTH_STATUS.ALIVE;
+            result.statusCode = httpsResult.statusCode;
+            result.checkMethod = 'https';
+            result.portsOpen.push(443);
+          }
+          const ssl = await getSSLInfo(targetHost);
+          if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
+        }
+        if (result.status !== HEALTH_STATUS.ALIVE && knownPorts.includes(80)) {
+          const httpResult = await httpCheck(targetHost, 80, false);
+          if (httpResult.alive) {
+            result.status = HEALTH_STATUS.ALIVE;
+            result.statusCode = httpResult.statusCode;
+            result.checkMethod = 'http';
+            result.portsOpen.push(80);
+          }
+        }
+
+        // Check remaining known ports
+        for (const port of knownPorts) {
+          if (port === 443 || port === 80) continue;
           const open = await tcpCheck(targetIP, port);
-          if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; }
+          if (open) { result.portsOpen.push(port); if (result.status !== HEALTH_STATUS.ALIVE) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; } }
         }
-      }
 
-      // ICMP ping
-      if (result.status !== HEALTH_STATUS.ALIVE) {
-        const pingOk = await icmpPing(targetIP);
-        if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
+        // If no known ports, fall back to common ports check
+        if (knownPorts.length === 0) {
+          for (const { port } of COMMON_PORTS) {
+            const open = await tcpCheck(targetIP, port);
+            if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; break; }
+          }
+        }
+
+        // ICMP ping fallback
+        if (result.status !== HEALTH_STATUS.ALIVE) {
+          const pingOk = await icmpPing(targetIP);
+          if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
+        }
       }
 
       // If nothing responded
@@ -713,6 +768,14 @@ async function performScan(domain, scanId) {
            propagationResults ? JSON.stringify(propagationResults) : null]
         );
 
+        // Store discovered ports from full port scan
+        if (healthResult._knownPorts) {
+          await query(
+            'UPDATE dns_records SET known_ports = $1, last_port_scan = NOW() WHERE id = $2',
+            [JSON.stringify(healthResult.portsOpen), record.id]
+          );
+        }
+
         if (healthResult.status === HEALTH_STATUS.ALIVE) alive++;
         else if (healthResult.status === HEALTH_STATUS.DEAD || healthResult.status === HEALTH_STATUS.TAKEOVER_RISK) dead++;
 
@@ -752,4 +815,17 @@ async function performScan(domain, scanId) {
   }
 }
 
-module.exports = { performScan, enumerateDNS, healthCheckRecord, checkIPv6Connectivity, hasIPv6 };
+async function portScanRecord(recordId) {
+  const result = await query('SELECT dr.*, d.domain FROM dns_records dr JOIN domains d ON d.id = dr.domain_id WHERE dr.id = $1', [recordId]);
+  if (!result.rows.length) throw new Error('Record not found');
+  const record = result.rows[0];
+  record._forcePortScan = true;
+  const healthResult = await healthCheckRecord(record, record.domain);
+  if (healthResult._knownPorts) {
+    await query('UPDATE dns_records SET known_ports = $1, last_port_scan = NOW() WHERE id = $2',
+      [JSON.stringify(healthResult.portsOpen), recordId]);
+  }
+  return { portsOpen: healthResult.portsOpen, status: healthResult.status };
+}
+
+module.exports = { performScan, enumerateDNS, healthCheckRecord, fullPortScan, portScanRecord, checkIPv6Connectivity, hasIPv6 };
