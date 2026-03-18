@@ -579,16 +579,17 @@ router.get('/google/status', async (req, res) => {
 });
 
 // ─── Google OAuth start ───
-router.get('/google', (req, res) => {
-  if (!isGoogleAuthConfigured()) return res.status(404).json({ error: 'Google auth not configured' });
+router.get('/google', async (req, res) => {
+  if (!(await isGoogleAuthConfigured())) return res.status(404).json({ error: 'Google auth not configured' });
   const proto = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
   const redirectUri = `${proto}://${host}/api/auth/google/callback`;
   const state = crypto.randomBytes(32).toString('hex');
+  const clientId = await getSetting('google_client_id');
   req.session.googleOAuthState = state;
   req.session.save(() => {
     const params = new URLSearchParams({
-      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: 'openid email profile',
@@ -613,13 +614,15 @@ router.get('/google/callback', async (req, res) => {
     const host = req.get('x-forwarded-host') || req.get('host');
     const redirectUri = `${proto}://${host}/api/auth/google/callback`;
 
+    const clientId = await getSetting('google_client_id');
+    const clientSecret = await getSetting('google_client_secret');
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),

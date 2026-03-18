@@ -5,7 +5,8 @@ const nodemailer = require('nodemailer');
 const crypto = require('node:crypto');
 const { query } = require('./db');
 const { decrypt } = require('./crypto-utils');
-const { HEALTH_STATUS, CONSECUTIVE_FAILURES_THRESHOLD, EXPIRY_WARNING_DAYS, WEBHOOK_EVENT_TYPES } = require('./constants');
+const { HEALTH_STATUS, EXPIRY_WARNING_DAYS, WEBHOOK_EVENT_TYPES } = require('./constants');
+const { getSetting } = require('./settings-service');
 
 async function getVapidKeys() {
   const pubResult = await query("SELECT value FROM app_settings WHERE key = 'vapid_public_key'");
@@ -171,14 +172,15 @@ async function processPostScanNotifications(domain, scanId) {
 
     // Dead records
     if (user.notify_on_dead && deadRecords.rows.length > 0) {
+      const failureThreshold = parseInt(await getSetting('consecutive_failures_threshold'), 10) || 3;
       for (const record of deadRecords.rows) {
         if (record.status === HEALTH_STATUS.DEAD) {
           // Check consecutive failures
           const failCount = await query(
             'SELECT COUNT(*) as count FROM (SELECT status FROM health_checks WHERE record_id = $1 ORDER BY checked_at DESC LIMIT $2) sub WHERE sub.status = $3',
-            [record.id, CONSECUTIVE_FAILURES_THRESHOLD, HEALTH_STATUS.DEAD]
+            [record.id, failureThreshold, HEALTH_STATUS.DEAD]
           );
-          if (parseInt(failCount.rows[0].count) >= CONSECUTIVE_FAILURES_THRESHOLD) {
+          if (parseInt(failCount.rows[0].count) >= failureThreshold) {
             notifications.push({ type: 'record.dead', title: `Dead: ${record.name}.${domain.domain}`, body: `${record.record_type} record ${record.name} (${record.value}) is dead. ${record.error_message || ''}`, record });
           }
         }

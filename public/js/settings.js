@@ -6,6 +6,7 @@ Object.assign(App, {
       <div class="settings-tabs">
         <button class="settings-tab active" onclick="App.showSettingsTab('profile', this)">Profile</button>
         <button class="settings-tab" onclick="App.showSettingsTab('notifications', this)">Notifications</button>
+        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'system\', this)">System</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'smtp\', this)">SMTP</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'webhooks\', this)">Webhooks</button>' : ''}
         ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'auth\', this)">Authentication</button>' : ''}
@@ -26,6 +27,46 @@ Object.assign(App, {
     if (!content) return;
 
     switch (tab) {
+      case 'system':
+        try {
+          const sysSettings = await this.api('/settings/system');
+          const categories = { general: 'General', auth: 'Authentication & OAuth', scanner: 'Scanner Performance' };
+          let shtml = '<h3 style="margin-bottom:16px">System Settings</h3>';
+          shtml += '<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">These settings can also be seeded from Docker environment variables on first run. Once saved here, the database values take precedence.</p>';
+          for (const [catKey, catLabel] of Object.entries(categories)) {
+            const items = sysSettings[catKey] || [];
+            if (items.length === 0) continue;
+            shtml += `<div class="card" style="max-width:600px;margin-bottom:16px"><h4 style="margin-bottom:12px">${catLabel}</h4>`;
+            for (const s of items) {
+              if (s.type === 'boolean') {
+                shtml += `<label class="toggle" style="margin-bottom:12px">
+                  <input type="checkbox" class="sys-setting" data-key="${s.key}" ${s.value === 'true' ? 'checked' : ''}>
+                  <div class="toggle-track"></div>
+                  <div><span>${this.esc(s.label)}</span>${s.description ? `<div style="font-size:12px;color:var(--text-muted)">${this.esc(s.description)}</div>` : ''}</div>
+                </label>`;
+              } else if (s.type === 'number') {
+                shtml += `<div class="form-group" style="margin-bottom:12px">
+                  <label>${this.esc(s.label)}</label>
+                  ${s.description ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${this.esc(s.description)}</div>` : ''}
+                  <input type="number" class="sys-setting" data-key="${s.key}" value="${this.esc(s.value)}">
+                </div>`;
+              } else {
+                shtml += `<div class="form-group" style="margin-bottom:12px">
+                  <label>${this.esc(s.label)}${s.sensitive ? ' (encrypted)' : ''}</label>
+                  ${s.description ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${this.esc(s.description)}</div>` : ''}
+                  <input type="${s.sensitive ? 'password' : 'text'}" class="sys-setting" data-key="${s.key}"
+                    value="${s.sensitive ? '' : this.esc(s.value || '')}"
+                    placeholder="${s.sensitive ? (s.hasValue ? 'Leave blank to keep current' : 'Not set') : ''}">
+                </div>`;
+              }
+            }
+            shtml += '</div>';
+          }
+          shtml += '<button class="btn-primary" onclick="App.saveSystemSettings()">Save Settings</button>';
+          content.innerHTML = shtml;
+        } catch (e) { content.innerHTML = `<div class="card"><p>Error loading system settings: ${this.esc(e.message)}</p></div>`; }
+        break;
+
       case 'profile':
         const hasPassword = this.user.has_password !== false;
         content.innerHTML = `<div class="card" style="max-width:500px">
@@ -141,7 +182,7 @@ Object.assign(App, {
             ${gs.clientId ? `
               <label class="toggle"><input type="checkbox" id="google-auth-toggle" ${gs.enabled ? 'checked' : ''} onchange="App.toggleGoogleAuth(this.checked)"><div class="toggle-track"></div>Enable Google Sign-In</label>
               <p style="font-size:12px;color:var(--text-muted);margin-top:8px">Client ID: ${gs.clientId.substring(0, 20)}...</p>
-            ` : '<p style="color:var(--text-muted);font-size:13px">Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables to enable.</p>'}
+            ` : '<p style="color:var(--text-muted);font-size:13px">Google OAuth not configured. Set the Google Client ID and Secret in <a href="#settings" onclick="App.showSettingsTab(\'system\', document.querySelector(\'.settings-tab\'))">System Settings</a>.</p>'}
           </div>`;
         } catch (e) { content.innerHTML = `<div class="card"><p>Error loading auth settings</p></div>`; }
         break;
@@ -461,6 +502,26 @@ Object.assign(App, {
     try {
       await this.api('/settings/google-auth', { method: 'PUT', body: { enabled } });
       this.toast(`Google Sign-In ${enabled ? 'enabled' : 'disabled'}`, 'success');
+    } catch (e) { this.toast(e.message, 'error'); }
+  },
+
+  // ─── System Settings ───
+  async saveSystemSettings() {
+    const inputs = document.querySelectorAll('.sys-setting');
+    const body = {};
+    for (const input of inputs) {
+      const key = input.dataset.key;
+      if (input.type === 'checkbox') {
+        body[key] = String(input.checked);
+      } else if (input.type === 'password' && !input.value) {
+        continue; // skip empty password fields (keep current)
+      } else {
+        body[key] = input.value;
+      }
+    }
+    try {
+      await this.api('/settings/system', { method: 'PUT', body });
+      this.toast('System settings saved', 'success');
     } catch (e) { this.toast(e.message, 'error'); }
   },
 

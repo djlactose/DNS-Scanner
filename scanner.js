@@ -9,9 +9,24 @@ const { checkTakeover } = require('./takeover');
 const { checkPropagation } = require('./propagation');
 const {
   RECORD_TYPES, HEALTH_STATUS, SCAN_STATUS, SKIPPED_RECORD_TYPES,
-  COMMON_PORTS, MX_PORTS, HEALTH_CHECK_TIMEOUT_MS, MAX_CONCURRENT_CHECKS,
-  PRIVATE_RANGES_V4,
+  COMMON_PORTS, MX_PORTS, PRIVATE_RANGES_V4,
 } = require('./constants');
+const { getSetting } = require('./settings-service');
+
+// ─── Runtime settings (refreshed at the start of each scan) ───
+let _allowPrivateRanges = false;
+let _healthCheckTimeoutMs = 10000;
+let _scanTimeoutMs = 60000;
+let _maxConcurrentChecks = 10;
+let _consecutiveFailuresThreshold = 3;
+
+async function refreshScannerSettings() {
+  _allowPrivateRanges = (await getSetting('allow_private_ranges')) === 'true';
+  _healthCheckTimeoutMs = parseInt(await getSetting('health_check_timeout_ms'), 10) || 10000;
+  _scanTimeoutMs = parseInt(await getSetting('scan_timeout_ms'), 10) || 60000;
+  _maxConcurrentChecks = parseInt(await getSetting('max_concurrent_checks'), 10) || 10;
+  _consecutiveFailuresThreshold = parseInt(await getSetting('consecutive_failures_threshold'), 10) || 3;
+}
 
 // ─── IPv6 connectivity detection ───
 let _hasIPv6 = null; // null = untested, true/false after check
@@ -53,10 +68,8 @@ class Semaphore {
   }
 }
 
-const scanSemaphore = new Semaphore(MAX_CONCURRENT_CHECKS);
-
 function isPrivateIP(ip) {
-  if (process.env.ALLOW_PRIVATE_RANGES === 'true') return false;
+  if (_allowPrivateRanges) return false;
   if (ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
   // Handle IPv4-mapped IPv6 (::ffff:10.0.0.1)
   let v4 = ip;
@@ -181,7 +194,7 @@ async function enumerateDNS(domain) {
   });
 }
 
-async function tcpCheck(host, port, timeoutMs = HEALTH_CHECK_TIMEOUT_MS) {
+async function tcpCheck(host, port, timeoutMs = _healthCheckTimeoutMs) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     socket.setTimeout(timeoutMs);
@@ -193,7 +206,7 @@ async function tcpCheck(host, port, timeoutMs = HEALTH_CHECK_TIMEOUT_MS) {
 }
 
 async function httpCheck(host, port, useHttps = false) {
-  const timeout = HEALTH_CHECK_TIMEOUT_MS;
+  const timeout = _healthCheckTimeoutMs;
   const protocol = useHttps ? 'https' : 'http';
   try {
     const controller = new AbortController();
@@ -215,7 +228,7 @@ async function httpCheck(host, port, useHttps = false) {
 async function getSSLInfo(host, port = 443) {
   return new Promise((resolve) => {
     try {
-      const socket = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout: HEALTH_CHECK_TIMEOUT_MS }, () => {
+      const socket = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout: _healthCheckTimeoutMs }, () => {
         const cert = socket.getPeerCertificate();
         const authorized = socket.authorized;
         socket.destroy();
@@ -241,7 +254,7 @@ async function icmpPing(host) {
     const args = isWin
       ? [isIPv6 ? '-6' : '-4', '-n', '1', '-w', '5000', host]
       : ['-c', '1', '-W', '5', host];
-    execFile(cmd, args, { timeout: HEALTH_CHECK_TIMEOUT_MS }, (err, stdout) => {
+    execFile(cmd, args, { timeout: _healthCheckTimeoutMs }, (err, stdout) => {
       if (err) return resolve(false);
       resolve(!stdout.includes('100% packet loss') && !stdout.includes('unreachable'));
     });
@@ -418,6 +431,10 @@ async function healthCheckRecord(record, domain) {
 async function performScan(domain, scanId) {
   const { broadcastSSE } = require('./server');
   console.log(`[SCANNER] Starting scan for ${domain.domain} (scan ${scanId})`);
+
+  // Refresh configurable settings from DB at the start of each scan
+  await refreshScannerSettings();
+  const scanSemaphore = new Semaphore(_maxConcurrentChecks);
 
   try {
     // Step 1: Enumerate DNS records

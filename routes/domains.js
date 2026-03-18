@@ -5,6 +5,7 @@ const { query } = require('../db');
 const { requireAuth, requireAdmin, validateId, validateDomain, escapeCsv, escapeHtml, logAudit, getTagFilter } = require('../middleware');
 const { SCAN_STATUS, SCAN_TRIGGER } = require('../constants');
 const { broadcastSSE } = require('../sse');
+const { getSetting } = require('../settings-service');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 
 // ─── List domains ───
@@ -57,7 +58,7 @@ router.post('/domains', requireAdmin, async (req, res) => {
   try {
     const { domain, display_name, scan_interval_minutes } = req.body;
     if (!validateDomain(domain)) return res.status(400).json({ error: 'Invalid domain format' });
-    const maxDomains = parseInt(process.env.MAX_DOMAINS || '50', 10);
+    const maxDomains = parseInt(await getSetting('max_domains'), 10) || 50;
     const countResult = await query('SELECT COUNT(*) as count FROM domains');
     if (parseInt(countResult.rows[0].count) >= maxDomains) return res.status(400).json({ error: `Max ${maxDomains} domains allowed` });
     const interval = Math.max(15, Math.min(10080, parseInt(scan_interval_minutes) || 360));
