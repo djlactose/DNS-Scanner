@@ -9,17 +9,17 @@
     "test": "node --test test/api.test.js"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "connect-pg-simple": "^10.0.0",
-    "express": "^4.21.2",
+    "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",
     "compression": "^1.8.0",
-    "multer": "^1.4.5-lts.2",
-    "nodemailer": "^6.10.0",
+    "multer": "^2.0.0",
+    "nodemailer": "^8.0.0",
     "pg": "^8.14.0",
     "@simplewebauthn/server": "^11.0.0",
-    "web-push": "^3.7.0"
+    "web-push": "^3.6.7"
   },
   "engines": {
     "node": ">=22.0.0"
