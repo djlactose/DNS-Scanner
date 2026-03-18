@@ -141,7 +141,7 @@ app.use('/api/settings', settingsRoutes);
 setupSSE(app);
 
 // ─── SPA fallback ───
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
