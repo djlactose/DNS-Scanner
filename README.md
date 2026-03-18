@@ -4,25 +4,76 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 
 ## Features
 
-- **Full DNS Enumeration** - AXFR zone transfer + per-type queries (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, SOA)
-- **Health Checking** - HTTPS, HTTP, TCP ports (443, 80, 22, 8443, 8080, 3389, 21), ICMP ping
+### DNS Enumeration
+
+- **DNS Provider Integrations** - Fetch complete zone records from Cloudflare, AWS Route 53, DigitalOcean, and GoDaddy APIs
+- **AXFR Zone Transfers** - Attempts zone transfers against each nameserver
+- **Per-Type Queries** - Queries all record types (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA, SOA)
+- **Certificate Transparency Logs** - Discovers subdomains via crt.sh certificate search
+- **NSEC Walking** - Enumerates DNSSEC-signed zones via NSEC chain walking (up to 500 steps)
+- **Subdomain Brute-forcing** - Tests 150+ common subdomains including web, mail, dev, DevOps, Microsoft 365, DKIM selectors, and cloud verification records
+
+### Monitoring & Detection
+
+- **Health Checking** - HTTPS, HTTP, TCP port scanning (42 common ports), ICMP ping
+- **Full Port Scanning** - Scans 42 ports on first discovery (FTP, SSH, Telnet, SMTP, DNS, HTTP/S, POP3, IMAP, LDAP, SMB, RDP, MySQL, PostgreSQL, MSSQL, Oracle, MongoDB, Redis, Elasticsearch, Kubernetes API, VNC, WinRM, cPanel, Prometheus, and more), then quick-checks only known open ports on subsequent scans
+- **Manual Port Rescan** - Trigger a full port rescan on any individual record on demand
 - **Dead Record Detection** - Records marked dead after 3 consecutive failed checks across scans
-- **Subdomain Takeover Detection** - Dangling CNAME detection for AWS S3, GitHub Pages, Heroku, Azure, Netlify, and 20+ cloud services
+- **Subdomain Takeover Detection** - Dangling CNAME detection for AWS S3, GitHub Pages, Heroku, Azure, Netlify, CloudFront, Fastly, Shopify, and 20+ cloud services
 - **DNS Propagation Monitoring** - Compare results across Google, Cloudflare, Quad9, and OpenDNS resolvers
-- **Domain Expiry Monitoring** - Whois-based expiry tracking with 90/30/14/7 day warnings
+- **Domain Expiry Monitoring** - WHOIS-based expiry tracking with 90/30/14/7 day warnings
 - **DNS Change Detection** - Track when record values change between scans
-- **SSL Certificate Tracking** - Monitor validity, expiration, and errors
-- **Push Notifications** - Browser push via Web Push API (VAPID)
-- **Email Notifications** - Configurable SMTP with encrypted credentials
-- **Webhooks** - HMAC-signed webhooks with retry logic (Slack, Discord, Teams, Generic)
-- **Multi-User Auth** - Admin/viewer roles, bcrypt password hashing, session management, account lockout
-- **Tagging & Grouping** - Tag domains for filtering and targeted notifications
-- **Bulk Import** - CSV import up to 100 domains at once
+- **SSL Certificate Tracking** - Monitor validity, issuer, expiration, and errors
+- **IPv6 Connectivity Detection** - Auto-detects IPv6 support, skips AAAA checks when unavailable
+
+### Notifications
+
+- **Push Notifications** - Browser push via Web Push API (VAPID keys auto-generated)
+- **Email Notifications** - Configurable SMTP with AES-256-GCM encrypted credentials
+- **Webhooks** - HMAC-SHA256 signed webhooks with retry logic and delivery history
+  - Event types: record dead/recovered, takeover risk, DNS change, domain expiry, scan completed, propagation inconsistency
+  - Integrations: Slack, Discord, Teams, generic HTTP
+- **Tag-Based Filtering** - Receive notifications only for domains matching specific tags
+- **Test Notifications** - Send test push/email/webhook to verify configuration
+
+### Authentication & User Management
+
+- **Username/Password** - Bcrypt hashing (cost factor 12), account lockout after 5 failed attempts
+- **Passkeys (WebAuthn)** - Passwordless login, two-factor authentication, or either mode
+- **Google OAuth 2.0** - Optional SSO with configurable client credentials
+- **User Invitations** - Email-based invites with 7-day expiring tokens and role assignment
+- **Password Reset** - Email-based password recovery
+- **Multi-User Roles** - Admin (full access) and Viewer (read-only + scan) roles
+- **Tag-Based Access Control** - Restrict viewers to specific tagged domains
+- **User Import/Export** - Bulk user management via CSV
+- **API Key Management** - Generate API keys for programmatic access
+
+### Organization & Bulk Operations
+
+- **Tagging & Grouping** - Color-coded tags for filtering and targeted notifications
+- **Bulk Import** - CSV import up to 100 domains at once (with preview)
+- **Bulk Actions** - Select multiple domains for scanning, deleting, or tagging
 - **Export & Reporting** - CSV export and HTML print-ready reports
-- **Trend Charts** - Canvas-based health trend visualization
-- **Real-time Updates** - Server-Sent Events for live scan progress
+
+### UI & Experience
+
 - **PWA** - Installable, offline-capable, responsive design with auto light/dark theme
+- **Real-time Updates** - Server-Sent Events for live scan progress with record counters
+- **Trend Charts** - Canvas-based health trend visualization
+- **Dashboard** - Summary cards, dead record carousel, recent changes timeline, worker health status
+- **Record Filtering** - Filter by status (alive, dead, new, changed), type, or name
+- **Skeleton Loaders** - Loading states while fetching data
+- **Mobile Navigation** - Bottom navigation bar on mobile devices
+- **Record Dismissal** - Dismiss dead record alerts from the dashboard
+
+### Administration
+
+- **System Settings UI** - Configure general, authentication, scanner performance, and integration settings from the browser
+- **Scanner Performance Tuning** - Configurable health check timeout, scan timeout, max concurrent checks, failure threshold
+- **Audit Logging** - All admin actions logged with user attribution and timestamps
+- **Worker Health Monitoring** - Background worker heartbeat and status display
 - **Background Scanning** - Configurable intervals per domain (15 min to 7 days)
+- **Data Cleanup** - Auto-deletes health checks older than 90 days and webhook deliveries older than 30 days
 
 ## Architecture
 
@@ -61,6 +112,8 @@ All configuration is via environment variables (see `.env.example`). Secrets (`D
 | `MAX_DOMAINS` | No | `50` | Maximum domains per instance |
 | `APP_PORT` | No | `8080` | Host port for web UI |
 
+Additional settings (DNS provider API keys, OAuth credentials, scanner performance) can be configured through the System Settings UI after deployment.
+
 ## Security
 
 - All database queries use parameterized queries (no SQL injection)
@@ -69,12 +122,15 @@ All configuration is via environment variables (see `.env.example`). Secrets (`D
 - SSRF protection blocks private IP ranges by default
 - Passwords hashed with bcrypt (cost factor 12)
 - Account lockout after 5 failed attempts (15 min)
-- SMTP credentials encrypted with AES-256-GCM at rest
+- SMTP credentials and API keys encrypted with AES-256-GCM at rest
 - Webhooks signed with HMAC-SHA256
 - All containers run as non-root with minimal capabilities
 - Internal services not exposed to host network
-- Rate limiting on login, registration, scan triggers, and general API
+- Rate limiting on login, registration, scan triggers, password reset, and general API
 - Gzip compression enabled
+- Audit logging for all admin actions
+- CSRF token protection
+- Security headers (X-Content-Type-Options, X-Frame-Options, Permissions-Policy)
 
 ## Ports
 
@@ -115,54 +171,129 @@ Records are marked dead after **3 consecutive failed health checks** across scan
 
 | Type | Checks (stops at first success) |
 |------|-------------------------------|
-| A/AAAA | HTTPS -> HTTP -> TCP ports (443,80,22,8443,8080,3389,21) -> ICMP |
+| A/AAAA | Full port scan (42 ports, first discovery) or known-port quick check -> HTTPS/HTTP -> ICMP |
 | CNAME | Resolve target, then same as A/AAAA |
 | MX | TCP 25 -> TCP 587 -> TCP 465 -> ICMP |
 | NS | DNS query -> ICMP |
 | SRV | TCP host:port -> ICMP |
 | TXT/CAA/SOA | Skipped (informational) |
 
+## DNS Provider Integrations
+
+Configure API credentials in System Settings to fetch complete zone records directly from your DNS provider:
+
+| Provider | Required Credentials | Permissions |
+|----------|---------------------|-------------|
+| **Cloudflare** | API Token | Zone:Read, DNS:Read |
+| **AWS Route 53** | Access Key + Secret Key | Route53 read access |
+| **DigitalOcean** | Personal Access Token | Domain read access |
+| **GoDaddy** | API Key + API Secret | Domain read access |
+
+When configured, provider APIs are queried first during scans, providing complete and authoritative zone data before falling back to DNS enumeration techniques.
+
 ## API
 
 All endpoints require authentication unless noted. Admin-only endpoints require `role: admin`.
 
 ### Auth
+
 - `POST /api/auth/register` - Create account
 - `POST /api/auth/login` - Login
 - `POST /api/auth/logout` - Logout
 - `GET /api/auth/me` - Current user
+- `PUT /api/auth/password` - Change password
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Complete password reset
+- `POST /api/auth/passkey/register-options` - WebAuthn registration
+- `POST /api/auth/passkey/register-verify` - Verify WebAuthn registration
+- `POST /api/auth/passkey/login-options` - WebAuthn login
+- `POST /api/auth/passkey/login-verify` - Verify WebAuthn login
+- `POST /api/auth/passkey/2fa-options` - Two-factor challenge
+- `POST /api/auth/passkey/verify-2fa` - Verify two-factor
+- `POST /api/auth/accept-invite` - Accept invitation
 
 ### Domains (admin: create/update/delete)
+
 - `GET /api/domains` - List domains
 - `POST /api/domains` - Add domain
 - `PUT /api/domains/:id` - Update domain
 - `DELETE /api/domains/:id` - Delete domain
 - `POST /api/domains/import` - Bulk CSV import
+- `POST /api/domains/:id/tags/:tagId` - Add tag to domain
+- `DELETE /api/domains/:id/tags/:tagId` - Remove tag from domain
+- `POST /api/domains/bulk/scan` - Bulk scan
+- `POST /api/domains/bulk/delete` - Bulk delete
+- `POST /api/domains/bulk/tag` - Bulk tag
 
 ### Scanning
+
 - `POST /api/domains/:id/scan` - Manual scan
 - `POST /api/scan-all` - Scan all domains
 - `GET /api/domains/:id/scans` - Scan history
+- `GET /api/scans/:id` - Scan details
 
 ### Records
-- `GET /api/domains/:id/records` - DNS records with health status
+
+- `GET /api/domains/:id/records` - DNS records with health status (filterable by status)
 - `GET /api/records/:id/history` - Health check history
-- `GET /api/records/:id/changes` - DNS change history
+- `GET /api/records/:id/changes` - Record change history
+- `GET /api/domains/:id/changes` - Domain-wide change history
+- `PUT /api/records/:id/dismiss` - Dismiss dead record alert
+- `POST /api/records/:id/port-scan` - Trigger full port rescan
 
 ### Dashboard
-- `GET /api/dashboard` - Summary stats, dead records, recent changes
 
-### Export
+- `GET /api/dashboard` - Summary stats, dead records, recent changes, IPv6 status
+
+### Export & Data
+
 - `GET /api/domains/:id/export/csv` - CSV download
 - `GET /api/domains/:id/export/report` - HTML report
+- `GET /api/domains/:id/propagation` - DNS propagation data
+- `GET /api/domains/:id/whois` - WHOIS data
 
 ### Notifications & Webhooks
-- `GET/PUT /api/notifications/settings` - User notification preferences
+
+- `GET/PUT /api/notifications/settings` - Notification preferences
+- `POST /api/notifications/test-push` - Test push notification
+- `POST /api/notifications/test-email` - Test email
+- `GET /api/push/vapid-key` - VAPID public key
 - `POST /api/push/subscribe` - Register push subscription
-- `GET/POST/PUT/DELETE /api/webhooks` - Webhook management
+- `DELETE /api/push/subscribe` - Unsubscribe
+- `GET/PUT /api/smtp` - SMTP configuration
+- `GET/POST/PUT/DELETE /api/webhooks` - Webhook CRUD
+- `POST /api/webhooks/:id/test` - Test webhook
+- `GET /api/webhooks/:id/deliveries` - Delivery history
+
+### Users (admin)
+
+- `GET /api/users` - List users
+- `PUT /api/users/:id` - Update user role/access
+- `DELETE /api/users/:id` - Delete user
+- `POST /api/users/invite` - Invite user
+- `GET /api/users/invites` - List invitations
+- `DELETE /api/users/invites/:id` - Revoke invitation
+- `GET /api/users/export` - Export users CSV
+- `POST /api/users/import` - Import users CSV
+
+### Tags (admin)
+
+- `GET/POST /api/tags` - List/create tags
+- `PUT/DELETE /api/tags/:id` - Update/delete tags
+
+### Settings (admin)
+
+- `GET/PUT /api/settings/system` - System settings
+- `GET /api/settings/audit-log` - Audit log
+- `GET /api/settings/worker/status` - Worker health
 
 ### Real-time
+
 - `GET /api/events` - Server-Sent Events stream
+
+### Health
+
+- `GET /health` - Health check (DB connectivity, uptime)
 
 ## Development
 
