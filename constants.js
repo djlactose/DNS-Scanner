@@ -112,10 +112,48 @@ const WEBHOOK_EVENT_TYPES = [
 const EXPIRY_WARNING_DAYS = [90, 30, 14, 7];
 
 const COMMON_SUBDOMAINS = [
-  'www', 'mail', 'smtp', 'pop', 'imap', 'ftp', 'webmail', 'remote', 'vpn',
-  'ns1', 'ns2', 'mx', 'mx1', 'mx2', 'autodiscover', 'autoconfig', '_dmarc',
-  'cpanel', 'whm', 'cdn', 'api', 'dev', 'staging', 'blog', 'shop', 'store',
-  'portal', 'admin', 'app', 'docs', 'status', 'git', 'ci', 'test', 'demo',
+  // Web & apps
+  'www', 'app', 'api', 'cdn', 'static', 'assets', 'media', 'images', 'img',
+  'portal', 'admin', 'panel', 'dashboard', 'login', 'sso', 'auth', 'oauth',
+  'dev', 'staging', 'stage', 'uat', 'qa', 'test', 'sandbox', 'demo', 'beta', 'preview',
+  'blog', 'shop', 'store', 'pay', 'checkout', 'docs', 'wiki', 'help', 'support', 'kb',
+  'status', 'monitor', 'health', 'uptime',
+  // Mail
+  'mail', 'smtp', 'pop', 'pop3', 'imap', 'webmail', 'mx', 'mx1', 'mx2', 'mx3',
+  'email', 'autodiscover', 'autoconfig', 'mailgw', 'relay',
+  // DNS & infrastructure
+  'ns1', 'ns2', 'ns3', 'ns4', 'dns', 'dns1', 'dns2',
+  'ftp', 'sftp', 'ssh', 'vpn', 'remote', 'rdp', 'citrix', 'gateway', 'gw',
+  'proxy', 'cache', 'edge', 'lb', 'waf',
+  'cpanel', 'whm', 'plesk', 'webmin',
+  // Dev & CI/CD
+  'git', 'gitlab', 'github', 'bitbucket', 'ci', 'cd', 'jenkins', 'build',
+  'docker', 'registry', 'npm', 'repo', 'packages', 'artifactory',
+  'grafana', 'prometheus', 'kibana', 'elastic', 'logs', 'sentry', 'jaeger',
+  // Services
+  'db', 'database', 'mysql', 'postgres', 'redis', 'mongo', 'elastic', 'search',
+  'mq', 'rabbitmq', 'kafka', 'queue',
+  'crm', 'erp', 'jira', 'confluence', 'slack', 'teams',
+  // DNS records (underscore-prefixed)
+  '_dmarc', '_domainkey', '_spf',
+  '_sip._tls', '_sipfederationtls._tcp', '_autodiscover._tcp',
+  '_caldav._tcp', '_carddav._tcp', '_imap._tcp', '_imaps._tcp',
+  '_pop3._tcp', '_pop3s._tcp', '_submission._tcp',
+  // DKIM selectors (common providers)
+  'default._domainkey', 'google._domainkey', 'selector1._domainkey', 'selector2._domainkey',
+  'k1._domainkey', 'k2._domainkey', 'k3._domainkey', 'mail._domainkey',
+  's1._domainkey', 's2._domainkey', 'dkim._domainkey', 'mandrill._domainkey',
+  'smtp._domainkey', 'cm._domainkey', 'pm._domainkey', 'em._domainkey',
+  // Microsoft 365
+  'lyncdiscover', 'sip', 'enterpriseregistration', 'enterpriseenrollment',
+  'msoid', '_sipfederationtls._tcp',
+  // Cloud provider verification
+  '_amazonses', '_acme-challenge',
+  // Network
+  'intranet', 'extranet', 'internal', 'private', 'public', 'corp', 'office',
+  'backup', 'bak', 'old', 'new', 'legacy', 'archive',
+  'www2', 'www3', 'web', 'web1', 'web2', 'server', 'host',
+  'ns', 'resolver', 'time', 'ntp', 'ldap', 'ad', 'dc',
 ];
 
 const DOMAIN_REGEX = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$/;

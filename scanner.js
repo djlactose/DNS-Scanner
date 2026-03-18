@@ -85,34 +85,101 @@ function isPrivateIP(ip) {
   return false;
 }
 
+function execDig(args, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(''), timeoutMs);
+    try {
+      execFile('dig', args, { timeout: timeoutMs }, (err, stdout) => {
+        clearTimeout(timeout);
+        resolve(err ? '' : (stdout || ''));
+      });
+    } catch (e) { clearTimeout(timeout); resolve(''); }
+  });
+}
+
+function parseDigRecords(stdout, domain) {
+  const records = [];
+  const lines = stdout.trim().split('\n').filter(l => l && !l.startsWith(';'));
+  for (const line of lines) {
+    const parts = line.split(/\s+/);
+    if (parts.length >= 5) {
+      let name = parts[0].replace(/\.$/, '');
+      const type = parts[3];
+      let value = parts.slice(4).join(' ').replace(/\.$/, '');
+      if (!RECORD_TYPES.includes(type) || !value) continue;
+      // Convert FQDN name to relative
+      if (name === domain) name = '@';
+      else if (name.endsWith('.' + domain)) name = name.slice(0, -(domain.length + 1));
+      const priority = type === 'MX' ? parseInt(parts[4]) : null;
+      if (type === 'MX') value = parts.slice(5).join(' ').replace(/\.$/, '');
+      records.push({ name, type, value, ttl: parseInt(parts[1]) || null, priority });
+    }
+  }
+  return records;
+}
+
 async function attemptAXFR(domain) {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => resolve([]), 15000);
     try {
-      dns.resolveNs(domain, (err, nsRecords) => {
+      dns.resolveNs(domain, async (err, nsRecords) => {
         if (err || !nsRecords?.length) { clearTimeout(timeout); return resolve([]); }
-        const ns = nsRecords[0];
-        execFile('dig', ['@' + ns, domain, 'AXFR', '+short', '+time=10'], { timeout: 15000 }, (err, stdout) => {
-          clearTimeout(timeout);
-          if (err || !stdout) return resolve([]);
-          const records = [];
-          const lines = stdout.trim().split('\n').filter(Boolean);
-          for (const line of lines) {
-            const parts = line.split(/\s+/);
-            if (parts.length >= 4) {
-              const name = parts[0].replace(/\.$/, '');
-              const type = parts[3];
-              const value = parts.slice(4).join(' ').replace(/\.$/, '');
-              if (RECORD_TYPES.includes(type) && value) {
-                records.push({ name, type, value, ttl: parseInt(parts[1]) || null, priority: type === 'MX' ? parseInt(parts[4]) : null });
-              }
-            }
+        // Try AXFR against each NS until one works
+        for (const ns of nsRecords) {
+          const stdout = await execDig(['@' + ns, domain, 'AXFR', '+time=10'], 15000);
+          if (stdout && !stdout.includes('Transfer failed') && !stdout.includes('; Transfer failed')) {
+            const records = parseDigRecords(stdout, domain);
+            if (records.length > 0) { clearTimeout(timeout); return resolve(records); }
           }
-          resolve(records);
-        });
+        }
+        clearTimeout(timeout);
+        resolve([]);
       });
     } catch (e) { clearTimeout(timeout); resolve([]); }
   });
+}
+
+async function attemptNSECWalk(domain) {
+  const records = [];
+  const seen = new Set();
+  let current = domain;
+  const maxSteps = 500;
+
+  for (let i = 0; i < maxSteps; i++) {
+    const stdout = await execDig(['@8.8.8.8', current, 'NSEC', '+dnssec', '+time=5'], 10000);
+    if (!stdout) break;
+
+    // Extract NSEC record to find next domain name
+    const nsecLine = stdout.split('\n').find(l => !l.startsWith(';') && l.includes('\tNSEC\t'));
+    if (!nsecLine) break;
+
+    const parts = nsecLine.split(/\s+/);
+    const nsecIdx = parts.indexOf('NSEC');
+    if (nsecIdx < 0 || nsecIdx + 1 >= parts.length) break;
+
+    const nextName = parts[nsecIdx + 1].replace(/\.$/, '');
+    // Types listed after the next name are the types that exist at 'current'
+    const existingTypes = parts.slice(nsecIdx + 2);
+
+    // Record the current name's types
+    const currentClean = current.replace(/\.$/, '');
+    if (!seen.has(currentClean)) {
+      seen.add(currentClean);
+      let name = currentClean === domain ? '@' : currentClean.endsWith('.' + domain) ? currentClean.slice(0, -(domain.length + 1)) : currentClean;
+      for (const type of existingTypes) {
+        if (RECORD_TYPES.includes(type)) {
+          records.push({ name, type, _needsResolve: true });
+        }
+      }
+    }
+
+    // Move to next name in the chain
+    if (nextName === domain || nextName === current || seen.has(nextName)) break;
+    if (!nextName.endsWith('.' + domain) && nextName !== domain) break;
+    current = nextName;
+  }
+
+  return records;
 }
 
 async function enumerateDNS(domain) {
@@ -186,7 +253,24 @@ async function enumerateDNS(domain) {
 
   console.log(`[SCANNER] Apex enumeration for ${domain}: ${records.length} records (${records.map(r => r.type).filter((v, i, a) => a.indexOf(v) === i).join(', ')})`);
 
-  // Discover subdomains from Certificate Transparency logs
+  // ─── NSEC walking (DNSSEC-signed domains) ───
+  let nsecNames = [];
+  try {
+    const nsecRecords = await attemptNSECWalk(domain);
+    if (nsecRecords.length > 0) {
+      // NSEC tells us which names and types exist — resolve the actual values
+      const nsecSubs = new Set();
+      for (const r of nsecRecords) {
+        if (r.name !== '@') nsecSubs.add(r.name);
+      }
+      nsecNames = [...nsecSubs];
+      console.log(`[SCANNER] NSEC walk for ${domain}: discovered ${nsecNames.length} subdomains`);
+    }
+  } catch (e) {
+    console.log(`[SCANNER] NSEC walk failed for ${domain}: ${e.message}`);
+  }
+
+  // ─── Certificate Transparency logs ───
   let ctSubdomains = [];
   try {
     const controller = new AbortController();
@@ -202,7 +286,7 @@ async function enumerateDNS(domain) {
           const clean = name.trim().toLowerCase().replace(/^\*\./, '');
           if (clean.endsWith(`.${domain}`) && !clean.includes('*')) {
             const sub = clean.slice(0, -(domain.length + 1));
-            if (sub && !sub.includes('.')) subSet.add(sub);
+            if (sub) subSet.add(sub);
           }
         }
       }
@@ -213,43 +297,67 @@ async function enumerateDNS(domain) {
     console.log(`[SCANNER] CT log lookup failed for ${domain}: ${e.message}`);
   }
 
-  // Merge CT-discovered subdomains with common list (deduplicated)
-  const allSubdomains = [...new Set([...COMMON_SUBDOMAINS, ...ctSubdomains])];
+  // ─── Merge all subdomain sources (deduplicated) ───
+  const allSubdomains = [...new Set([...COMMON_SUBDOMAINS, ...ctSubdomains, ...nsecNames])];
+  console.log(`[SCANNER] Total subdomains to check for ${domain}: ${allSubdomains.length}`);
 
-  // Enumerate subdomains for A, AAAA, CNAME, TXT records
-  const subdomainResults = await Promise.allSettled(
-    allSubdomains.map(async (sub) => {
-      const fqdn = `${sub}.${domain}`;
-      const subRecords = [];
-      // CNAME check first
+  // ─── Resolve all subdomains for all applicable record types ───
+  async function resolveSubdomain(sub) {
+    const fqdn = `${sub}.${domain}`;
+    const subRecords = [];
+
+    // CNAME check first
+    try {
+      const cnames = await resolver.resolveCname(fqdn);
+      for (const cname of cnames) subRecords.push({ name: sub, type: 'CNAME', value: cname });
+    } catch (e) { /* no CNAME */ }
+
+    // A/AAAA (only if no CNAME — they're mutually exclusive)
+    if (!subRecords.some(r => r.type === 'CNAME')) {
       try {
-        const cnames = await resolver.resolveCname(fqdn);
-        for (const cname of cnames) subRecords.push({ name: sub, type: 'CNAME', value: cname });
-      } catch (e) { /* no CNAME for this subdomain */ }
-      // A records (only if no CNAME found — CNAME and A are mutually exclusive)
-      if (!subRecords.some(r => r.type === 'CNAME')) {
-        try {
-          const ips = await resolver.resolve4(fqdn);
-          for (const ip of ips) subRecords.push({ name: sub, type: 'A', value: ip });
-        } catch (e) { /* no A record */ }
-        try {
-          const ips = await resolver.resolve6(fqdn);
-          for (const ip of ips) subRecords.push({ name: sub, type: 'AAAA', value: ip });
-        } catch (e) { /* no AAAA record */ }
+        const ips = await resolver.resolve4(fqdn);
+        for (const ip of ips) subRecords.push({ name: sub, type: 'A', value: ip });
+      } catch (e) {}
+      try {
+        const ips = await resolver.resolve6(fqdn);
+        for (const ip of ips) subRecords.push({ name: sub, type: 'AAAA', value: ip });
+      } catch (e) {}
+    }
+
+    // TXT records on all subdomains (SPF, DKIM, DMARC, verification records, etc.)
+    try {
+      const txts = await resolver.resolveTxt(fqdn);
+      for (const txt of txts) subRecords.push({ name: sub, type: 'TXT', value: txt.join('') });
+    } catch (e) {}
+
+    // MX on subdomains (some orgs have mail on subdomains)
+    try {
+      const mxes = await resolver.resolveMx(fqdn);
+      for (const mx of mxes) {
+        if (mx.exchange) subRecords.push({ name: sub, type: 'MX', value: mx.exchange, priority: mx.priority });
       }
-      // TXT records for DNS-specific subdomains
-      if (sub.startsWith('_')) {
-        try {
-          const txts = await resolver.resolveTxt(fqdn);
-          for (const txt of txts) subRecords.push({ name: sub, type: 'TXT', value: txt.join('') });
-        } catch (e) { /* no TXT record */ }
-      }
-      return subRecords;
-    })
-  );
+    } catch (e) {}
+
+    // SRV on underscore-prefixed subdomains
+    if (sub.startsWith('_')) {
+      try {
+        const srvs = await resolver.resolveSrv(fqdn);
+        for (const srv of srvs) subRecords.push({ name: sub, type: 'SRV', value: `${srv.name}:${srv.port}`, priority: srv.priority });
+      } catch (e) {}
+    }
+
+    return subRecords;
+  }
+
+  // Run in batches to avoid overwhelming DNS resolvers
+  const BATCH_SIZE = 50;
   let subCount = 0;
-  for (const result of subdomainResults) {
-    if (result.status === 'fulfilled') { subCount += result.value.length; records.push(...result.value); }
+  for (let i = 0; i < allSubdomains.length; i += BATCH_SIZE) {
+    const batch = allSubdomains.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map(resolveSubdomain));
+    for (const result of results) {
+      if (result.status === 'fulfilled') { subCount += result.value.length; records.push(...result.value); }
+    }
   }
   console.log(`[SCANNER] Subdomain enumeration for ${domain}: ${subCount} additional records from ${allSubdomains.length} subdomains`);
 
