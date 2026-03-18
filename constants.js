@@ -111,6 +111,13 @@ const WEBHOOK_EVENT_TYPES = [
 
 const EXPIRY_WARNING_DAYS = [90, 30, 14, 7];
 
+const COMMON_SUBDOMAINS = [
+  'www', 'mail', 'smtp', 'pop', 'imap', 'ftp', 'webmail', 'remote', 'vpn',
+  'ns1', 'ns2', 'mx', 'mx1', 'mx2', 'autodiscover', 'autoconfig', '_dmarc',
+  'cpanel', 'whm', 'cdn', 'api', 'dev', 'staging', 'blog', 'shop', 'store',
+  'portal', 'admin', 'app', 'docs', 'status', 'git', 'ci', 'test', 'demo',
+];
+
 const DOMAIN_REGEX = /^(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,}$/;
 
 module.exports = {
@@ -134,4 +141,5 @@ module.exports = {
   WEBHOOK_EVENT_TYPES,
   EXPIRY_WARNING_DAYS,
   DOMAIN_REGEX,
+  COMMON_SUBDOMAINS,
 };
