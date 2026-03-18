@@ -191,24 +191,24 @@ async function enumerateDNS(domain) {
       const subRecords = [];
       // CNAME check first
       try {
-        const cnames = await resolver.resolveCname(fqdn);
+        const cnames = await dns.promises.resolveCname(fqdn);
         for (const cname of cnames) subRecords.push({ name: sub, type: 'CNAME', value: cname });
       } catch (e) { /* no CNAME for this subdomain */ }
       // A records (only if no CNAME found — CNAME and A are mutually exclusive)
       if (!subRecords.some(r => r.type === 'CNAME')) {
         try {
-          const ips = await resolver.resolve4(fqdn);
+          const ips = await dns.promises.resolve4(fqdn);
           for (const ip of ips) subRecords.push({ name: sub, type: 'A', value: ip });
         } catch (e) { /* no A record */ }
         try {
-          const ips = await resolver.resolve6(fqdn);
+          const ips = await dns.promises.resolve6(fqdn);
           for (const ip of ips) subRecords.push({ name: sub, type: 'AAAA', value: ip });
         } catch (e) { /* no AAAA record */ }
       }
       // TXT records for DNS-specific subdomains
       if (sub.startsWith('_')) {
         try {
-          const txts = await resolver.resolveTxt(fqdn);
+          const txts = await dns.promises.resolveTxt(fqdn);
           for (const txt of txts) subRecords.push({ name: sub, type: 'TXT', value: txt.join('') });
         } catch (e) { /* no TXT record */ }
       }
