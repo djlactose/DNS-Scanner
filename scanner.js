@@ -186,9 +186,39 @@ async function enumerateDNS(domain) {
 
   console.log(`[SCANNER] Apex enumeration for ${domain}: ${records.length} records (${records.map(r => r.type).filter((v, i, a) => a.indexOf(v) === i).join(', ')})`);
 
-  // Enumerate common subdomains for A, AAAA, CNAME, TXT records
+  // Discover subdomains from Certificate Transparency logs
+  let ctSubdomains = [];
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const res = await fetch(`https://crt.sh/?q=%25.${encodeURIComponent(domain)}&output=json`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const certs = await res.json();
+      const subSet = new Set();
+      for (const cert of certs) {
+        const names = (cert.name_value || '').split('\n');
+        for (const name of names) {
+          const clean = name.trim().toLowerCase().replace(/^\*\./, '');
+          if (clean.endsWith(`.${domain}`) && !clean.includes('*')) {
+            const sub = clean.slice(0, -(domain.length + 1));
+            if (sub && !sub.includes('.')) subSet.add(sub);
+          }
+        }
+      }
+      ctSubdomains = [...subSet];
+      console.log(`[SCANNER] CT logs for ${domain}: found ${ctSubdomains.length} unique subdomains`);
+    }
+  } catch (e) {
+    console.log(`[SCANNER] CT log lookup failed for ${domain}: ${e.message}`);
+  }
+
+  // Merge CT-discovered subdomains with common list (deduplicated)
+  const allSubdomains = [...new Set([...COMMON_SUBDOMAINS, ...ctSubdomains])];
+
+  // Enumerate subdomains for A, AAAA, CNAME, TXT records
   const subdomainResults = await Promise.allSettled(
-    COMMON_SUBDOMAINS.map(async (sub) => {
+    allSubdomains.map(async (sub) => {
       const fqdn = `${sub}.${domain}`;
       const subRecords = [];
       // CNAME check first
@@ -221,7 +251,7 @@ async function enumerateDNS(domain) {
   for (const result of subdomainResults) {
     if (result.status === 'fulfilled') { subCount += result.value.length; records.push(...result.value); }
   }
-  console.log(`[SCANNER] Subdomain enumeration for ${domain}: ${subCount} additional records found`);
+  console.log(`[SCANNER] Subdomain enumeration for ${domain}: ${subCount} additional records from ${allSubdomains.length} subdomains`);
 
   // Deduplicate
   const seen = new Set();
