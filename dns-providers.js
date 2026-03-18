@@ -206,6 +206,40 @@ async function fetchDigitalOceanRecords(domain) {
   }
 }
 
+// ─── GoDaddy ───
+
+async function fetchGoDaddyRecords(domain) {
+  const apiKey = await getSetting('godaddy_api_key');
+  const apiSecret = await getSetting('godaddy_api_secret');
+  if (!apiKey || !apiSecret) return [];
+
+  try {
+    const res = await fetch(`https://api.godaddy.com/v1/domains/${encodeURIComponent(domain)}/records`, {
+      headers: { 'Authorization': `sso-key ${apiKey}:${apiSecret}`, 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    const records = [];
+    for (const r of data) {
+      const type = r.type;
+      if (!RECORD_TYPES.includes(type)) continue;
+
+      let name = r.name;
+      if (name === '@') { /* keep as-is */ }
+      else if (name === domain) name = '@';
+
+      records.push({ name, type, value: r.data, ttl: r.ttl || null, priority: r.priority || null });
+    }
+
+    console.log(`[PROVIDER] GoDaddy: ${records.length} records for ${domain}`);
+    return records;
+  } catch (e) {
+    console.log(`[PROVIDER] GoDaddy failed for ${domain}: ${e.message}`);
+    return [];
+  }
+}
+
 // ─── Main entry point ───
 
 async function fetchProviderRecords(domain) {
@@ -213,6 +247,7 @@ async function fetchProviderRecords(domain) {
     fetchCloudflareRecords(domain),
     fetchRoute53Records(domain),
     fetchDigitalOceanRecords(domain),
+    fetchGoDaddyRecords(domain),
   ]);
 
   const allRecords = [];
@@ -225,4 +260,4 @@ async function fetchProviderRecords(domain) {
   return allRecords;
 }
 
-module.exports = { fetchProviderRecords, fetchCloudflareRecords, fetchRoute53Records, fetchDigitalOceanRecords };
+module.exports = { fetchProviderRecords, fetchCloudflareRecords, fetchRoute53Records, fetchDigitalOceanRecords, fetchGoDaddyRecords };

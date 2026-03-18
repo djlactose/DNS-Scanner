@@ -30,6 +30,8 @@ const SETTINGS_DEFINITIONS = {
   route53_access_key:    { envVar: 'ROUTE53_ACCESS_KEY',    default: '', type: 'string',  category: 'integrations', label: 'AWS Access Key ID',          sensitive: true,  description: 'AWS access key for Route 53 DNS. Needs route53:ListHostedZones and route53:ListResourceRecordSets permissions.' },
   route53_secret_key:    { envVar: 'ROUTE53_SECRET_KEY',    default: '', type: 'string',  category: 'integrations', label: 'AWS Secret Access Key',      sensitive: true,  description: 'AWS secret key for Route 53 DNS.' },
   digitalocean_api_token: { envVar: 'DIGITALOCEAN_API_TOKEN', default: '', type: 'string', category: 'integrations', label: 'DigitalOcean API Token',    sensitive: true,  description: 'Personal access token for DigitalOcean DNS. Provides complete zone records for DO-managed domains.' },
+  godaddy_api_key:       { envVar: 'GODADDY_API_KEY',       default: '', type: 'string',  category: 'integrations', label: 'GoDaddy API Key',            sensitive: true,  description: 'API key from GoDaddy Developer Portal. Get one at developer.godaddy.com.' },
+  godaddy_api_secret:    { envVar: 'GODADDY_API_SECRET',    default: '', type: 'string',  category: 'integrations', label: 'GoDaddy API Secret',         sensitive: true,  description: 'API secret paired with your GoDaddy API key.' },
 };
 
 // ─── In-memory cache ───
