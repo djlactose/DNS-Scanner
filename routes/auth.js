@@ -338,7 +338,7 @@ router.post('/passkey/register-verify', requireAuth, async (req, res) => {
 // ─── Passkey login options ───
 router.post('/passkey/login-options', async (req, res) => {
   try {
-    const { rpID } = getWebAuthnConfig(req);
+    const { rpID } = await getWebAuthnConfig(req);
     const { username } = req.body || {};
     let allowCredentials;
 
@@ -371,7 +371,7 @@ router.post('/passkey/login-options', async (req, res) => {
 // ─── Passkey login verify ───
 router.post('/passkey/login-verify', async (req, res) => {
   try {
-    const { rpID, origin } = getWebAuthnConfig(req);
+    const { rpID, origin } = await getWebAuthnConfig(req);
     const challengeResult = await query(
       'SELECT challenge FROM webauthn_challenges WHERE session_id = $1 AND type = $2 AND expires_at > NOW()',
       [req.sessionID, 'authentication']
@@ -433,7 +433,7 @@ router.post('/passkey/login-verify', async (req, res) => {
 router.post('/passkey/2fa-options', async (req, res) => {
   try {
     if (!req.session.pending2faUserId) return res.status(400).json({ error: 'No pending 2FA verification' });
-    const { rpID } = getWebAuthnConfig(req);
+    const { rpID } = await getWebAuthnConfig(req);
 
     const creds = await query('SELECT credential_id, transports FROM user_credentials WHERE user_id = $1', [req.session.pending2faUserId]);
     const allowCredentials = creds.rows.map(c => ({ id: c.credential_id, transports: c.transports || ['internal', 'hybrid'] }));
@@ -460,7 +460,7 @@ router.post('/passkey/2fa-options', async (req, res) => {
 router.post('/passkey/verify-2fa', async (req, res) => {
   try {
     if (!req.session.pending2faUserId) return res.status(400).json({ error: 'No pending 2FA verification' });
-    const { rpID, origin } = getWebAuthnConfig(req);
+    const { rpID, origin } = await getWebAuthnConfig(req);
 
     const challengeResult = await query(
       'SELECT challenge FROM webauthn_challenges WHERE session_id = $1 AND type = $2 AND expires_at > NOW()',
@@ -570,11 +570,11 @@ router.put('/passkey/mode', requireAuth, async (req, res) => {
 
 // ─── Google OAuth status ───
 router.get('/google/status', async (req, res) => {
-  if (!isGoogleAuthConfigured()) return res.json({ enabled: false });
+  if (!(await isGoogleAuthConfigured())) return res.json({ enabled: false });
   try {
-    const setting = await query("SELECT value FROM app_settings WHERE key = 'google_auth_enabled'");
-    const enabled = setting.rows.length === 0 || setting.rows[0].value !== 'false';
-    res.json({ enabled, clientId: process.env.GOOGLE_CLIENT_ID });
+    const enabled = (await getSetting('google_auth_enabled')) !== 'false';
+    const clientId = await getSetting('google_client_id');
+    res.json({ enabled, clientId });
   } catch (err) { res.json({ enabled: false }); }
 });
 
