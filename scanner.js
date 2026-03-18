@@ -536,7 +536,7 @@ async function healthCheckRecord(record, domain) {
 
       if (needsPortScan) {
         // ─── Full port scan (first discovery or manual rescan) ───
-        const discovered = await fullPortScan(targetIP);
+        const discovered = await fullPortScan(targetHost);
         result.portsOpen = discovered.map(p => p.port);
         result._knownPorts = discovered; // pass to caller for DB storage
 
@@ -555,7 +555,7 @@ async function healthCheckRecord(record, domain) {
           result.status = HEALTH_STATUS.ALIVE;
           if (!result.checkMethod) result.checkMethod = `tcp:${result.portsOpen[0]}`;
         } else {
-          const pingOk = await icmpPing(targetIP);
+          const pingOk = await icmpPing(targetHost);
           if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
         }
 
@@ -588,21 +588,21 @@ async function healthCheckRecord(record, domain) {
         // Check remaining known ports
         for (const port of knownPorts) {
           if (port === 443 || port === 80) continue;
-          const open = await tcpCheck(targetIP, port);
+          const open = await tcpCheck(targetHost, port);
           if (open) { result.portsOpen.push(port); if (result.status !== HEALTH_STATUS.ALIVE) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; } }
         }
 
         // If no known ports, fall back to common ports check
         if (knownPorts.length === 0) {
           for (const { port } of COMMON_PORTS) {
-            const open = await tcpCheck(targetIP, port);
+            const open = await tcpCheck(targetHost, port);
             if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; break; }
           }
         }
 
         // ICMP ping fallback
         if (result.status !== HEALTH_STATUS.ALIVE) {
-          const pingOk = await icmpPing(targetIP);
+          const pingOk = await icmpPing(targetHost);
           if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
         }
       }
@@ -615,47 +615,49 @@ async function healthCheckRecord(record, domain) {
       }
 
     } else if (record.record_type === 'MX') {
-      for (const { port, name } of MX_PORTS) {
-        let mxIP = record.value;
-        try { const addrs = await dns.promises.resolve4(record.value); mxIP = addrs[0]; } catch (e) {}
-        if (isPrivateIP(mxIP)) { result.status = HEALTH_STATUS.SKIPPED; result.errorMessage = 'Private IP'; break; }
-        const open = await tcpCheck(mxIP, port);
-        if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; break; }
-      }
-      if (result.status !== HEALTH_STATUS.ALIVE && result.status !== HEALTH_STATUS.SKIPPED) {
-        const mxIP = record.value;
-        const pingOk = await icmpPing(mxIP);
-        if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
-        else { result.status = HEALTH_STATUS.DEAD; result.errorMessage = 'No MX ports responding'; result.checkMethod = 'all_failed'; }
+      const mxHost = record.value;
+      let mxIP = mxHost;
+      try { const addrs = await dns.promises.resolve4(mxHost); mxIP = addrs[0]; } catch (e) {}
+      if (isPrivateIP(mxIP)) { result.status = HEALTH_STATUS.SKIPPED; result.errorMessage = 'Private IP'; }
+      else {
+        for (const { port, name } of MX_PORTS) {
+          const open = await tcpCheck(mxHost, port);
+          if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; break; }
+        }
+        if (result.status !== HEALTH_STATUS.ALIVE) {
+          const pingOk = await icmpPing(mxHost);
+          if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
+          else { result.status = HEALTH_STATUS.DEAD; result.errorMessage = 'No MX ports responding'; result.checkMethod = 'all_failed'; }
+        }
       }
 
     } else if (record.record_type === 'NS') {
-      // Resolve NS hostname to IP first
-      let nsIP = record.value;
-      try { const addrs = await dns.promises.resolve4(record.value); nsIP = addrs[0]; } catch (e) {}
+      const nsHost = record.value;
+      let nsIP = nsHost;
+      try { const addrs = await dns.promises.resolve4(nsHost); nsIP = addrs[0]; } catch (e) {}
       if (isPrivateIP(nsIP)) { result.status = HEALTH_STATUS.SKIPPED; result.errorMessage = 'Private IP'; }
       else {
         const nsOk = await dnsQueryCheck(nsIP);
         if (nsOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'dns_query'; }
         else {
-          const pingOk = await icmpPing(nsIP);
+          const pingOk = await icmpPing(nsHost);
           if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
           else { result.status = HEALTH_STATUS.DEAD; result.errorMessage = 'NS not responding'; result.checkMethod = 'all_failed'; }
         }
       }
 
     } else if (record.record_type === 'SRV') {
-      const [host, portStr] = record.value.split(':');
+      const [srvHost, portStr] = record.value.split(':');
       const port = parseInt(portStr);
-      if (host && port) {
-        let srvIP = host;
-        try { const addrs = await dns.promises.resolve4(host); srvIP = addrs[0]; } catch (e) {}
+      if (srvHost && port) {
+        let srvIP = srvHost;
+        try { const addrs = await dns.promises.resolve4(srvHost); srvIP = addrs[0]; } catch (e) {}
         if (isPrivateIP(srvIP)) { result.status = HEALTH_STATUS.SKIPPED; result.errorMessage = 'Private IP'; }
         else {
-          const open = await tcpCheck(srvIP, port);
+          const open = await tcpCheck(srvHost, port);
           if (open) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; result.portsOpen.push(port); }
           else {
-            const pingOk = await icmpPing(srvIP);
+            const pingOk = await icmpPing(srvHost);
             if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
             else { result.status = HEALTH_STATUS.DEAD; result.errorMessage = 'SRV not responding'; result.checkMethod = 'all_failed'; }
           }
