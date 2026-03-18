@@ -117,7 +117,7 @@ async function attemptAXFR(domain) {
 
 async function enumerateDNS(domain) {
   const records = [];
-  const resolver = new dns.Resolver();
+  const resolver = new dns.promises.Resolver();
   resolver.setServers(['8.8.8.8', '1.1.1.1']);
 
   // Try AXFR first
@@ -133,48 +133,48 @@ async function enumerateDNS(domain) {
       let results;
       switch (type) {
         case 'A':
-          results = await dns.promises.resolve4(domain);
+          results = await resolver.resolve4(domain);
           for (const ip of results) records.push({ name: '@', type: 'A', value: ip });
           break;
         case 'AAAA':
-          results = await dns.promises.resolve6(domain);
+          results = await resolver.resolve6(domain);
           for (const ip of results) records.push({ name: '@', type: 'AAAA', value: ip });
           break;
         case 'CNAME':
           try {
-            results = await dns.promises.resolveCname(domain);
+            results = await resolver.resolveCname(domain);
             for (const cname of results) records.push({ name: '@', type: 'CNAME', value: cname });
           } catch (e) { /* CNAME often doesn't exist at apex */ }
           break;
         case 'MX':
-          results = await dns.promises.resolveMx(domain);
+          results = await resolver.resolveMx(domain);
           for (const mx of results) {
             if (mx.exchange) records.push({ name: '@', type: 'MX', value: mx.exchange, priority: mx.priority });
           }
           break;
         case 'TXT':
-          results = await dns.promises.resolveTxt(domain);
+          results = await resolver.resolveTxt(domain);
           for (const txt of results) records.push({ name: '@', type: 'TXT', value: txt.join('') });
           break;
         case 'NS':
-          results = await dns.promises.resolveNs(domain);
+          results = await resolver.resolveNs(domain);
           for (const ns of results) records.push({ name: '@', type: 'NS', value: ns });
           break;
         case 'SRV':
           try {
-            results = await dns.promises.resolveSrv(domain);
+            results = await resolver.resolveSrv(domain);
             for (const srv of results) records.push({ name: '@', type: 'SRV', value: `${srv.name}:${srv.port}`, priority: srv.priority });
           } catch (e) { /* SRV often doesn't exist */ }
           break;
         case 'CAA':
           try {
-            results = await dns.promises.resolveCaa(domain);
+            results = await resolver.resolveCaa(domain);
             for (const caa of results) records.push({ name: '@', type: 'CAA', value: `${caa.critical} ${caa.issue || caa.issuewild || caa.iodef || ''}` });
           } catch (e) { /* CAA often doesn't exist */ }
           break;
         case 'SOA':
           try {
-            results = await dns.promises.resolveSoa(domain);
+            results = await resolver.resolveSoa(domain);
             if (results) records.push({ name: '@', type: 'SOA', value: `${results.nsname} ${results.hostmaster}` });
           } catch (e) {}
           break;
@@ -184,6 +184,8 @@ async function enumerateDNS(domain) {
     }
   }
 
+  console.log(`[SCANNER] Apex enumeration for ${domain}: ${records.length} records (${records.map(r => r.type).filter((v, i, a) => a.indexOf(v) === i).join(', ')})`);
+
   // Enumerate common subdomains for A, AAAA, CNAME, TXT records
   const subdomainResults = await Promise.allSettled(
     COMMON_SUBDOMAINS.map(async (sub) => {
@@ -191,33 +193,35 @@ async function enumerateDNS(domain) {
       const subRecords = [];
       // CNAME check first
       try {
-        const cnames = await dns.promises.resolveCname(fqdn);
+        const cnames = await resolver.resolveCname(fqdn);
         for (const cname of cnames) subRecords.push({ name: sub, type: 'CNAME', value: cname });
       } catch (e) { /* no CNAME for this subdomain */ }
       // A records (only if no CNAME found — CNAME and A are mutually exclusive)
       if (!subRecords.some(r => r.type === 'CNAME')) {
         try {
-          const ips = await dns.promises.resolve4(fqdn);
+          const ips = await resolver.resolve4(fqdn);
           for (const ip of ips) subRecords.push({ name: sub, type: 'A', value: ip });
         } catch (e) { /* no A record */ }
         try {
-          const ips = await dns.promises.resolve6(fqdn);
+          const ips = await resolver.resolve6(fqdn);
           for (const ip of ips) subRecords.push({ name: sub, type: 'AAAA', value: ip });
         } catch (e) { /* no AAAA record */ }
       }
       // TXT records for DNS-specific subdomains
       if (sub.startsWith('_')) {
         try {
-          const txts = await dns.promises.resolveTxt(fqdn);
+          const txts = await resolver.resolveTxt(fqdn);
           for (const txt of txts) subRecords.push({ name: sub, type: 'TXT', value: txt.join('') });
         } catch (e) { /* no TXT record */ }
       }
       return subRecords;
     })
   );
+  let subCount = 0;
   for (const result of subdomainResults) {
-    if (result.status === 'fulfilled') records.push(...result.value);
+    if (result.status === 'fulfilled') { subCount += result.value.length; records.push(...result.value); }
   }
+  console.log(`[SCANNER] Subdomain enumeration for ${domain}: ${subCount} additional records found`);
 
   // Deduplicate
   const seen = new Set();
