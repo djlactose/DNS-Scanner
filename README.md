@@ -172,6 +172,11 @@ npm install
 DB_PASSWORD=dev SESSION_SECRET=$(openssl rand -hex 32) ENCRYPTION_KEY=$(openssl rand -hex 32) node server.js
 ```
 
+## Links
+
+- [Source Code](https://github.com/djlactose/DNS-Scanner)
+- [Buy Me a Coffee](https://buymeacoffee.com/djlactose)
+
 ## License
 
 MIT

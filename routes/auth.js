@@ -6,27 +6,30 @@ const { generateRegistrationOptions, verifyRegistrationResponse, generateAuthent
 const { getPool, query } = require('../db');
 const { requireAuth, requireAdmin, validateId, logAudit } = require('../middleware');
 const { USER_ROLES } = require('../constants');
+const { getSetting } = require('../settings-service');
 
 // ─── WebAuthn helpers ───
-function getWebAuthnConfig(req) {
+async function getWebAuthnConfig(req) {
   const proto = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
   const hostname = host.split(':')[0];
   return {
-    rpID: process.env.WEBAUTHN_RP_ID || hostname,
-    rpName: process.env.WEBAUTHN_RP_NAME || 'DNS Scanner',
-    origin: process.env.WEBAUTHN_ORIGIN || `${proto}://${host}`,
+    rpID: (await getSetting('webauthn_rp_id')) || hostname,
+    rpName: (await getSetting('webauthn_rp_name')) || 'DNS Scanner',
+    origin: (await getSetting('webauthn_origin')) || `${proto}://${host}`,
   };
 }
 
-function isGoogleAuthConfigured() {
-  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+async function isGoogleAuthConfigured() {
+  const clientId = await getSetting('google_client_id');
+  const clientSecret = await getSetting('google_client_secret');
+  return !!(clientId && clientSecret);
 }
 
 // ─── Register ───
 router.post('/register', async (req, res) => {
   try {
-    if (process.env.REGISTRATION_ENABLED === 'false') return res.status(403).json({ error: 'Registration is disabled' });
+    if ((await getSetting('registration_enabled')) === 'false') return res.status(403).json({ error: 'Registration is disabled' });
     const { username, password, email } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) return res.status(400).json({ error: 'Username must be 3-30 alphanumeric characters or underscores' });
@@ -259,7 +262,7 @@ router.post('/reset-password', async (req, res) => {
 // ─── Passkey registration options ───
 router.post('/passkey/register-options', requireAuth, async (req, res) => {
   try {
-    const { rpID, rpName } = getWebAuthnConfig(req);
+    const { rpID, rpName } = await getWebAuthnConfig(req);
     const userResult = await query('SELECT id, username FROM users WHERE id = $1', [req.session.userId]);
     const user = userResult.rows[0];
     const existing = await query('SELECT credential_id FROM user_credentials WHERE user_id = $1', [user.id]);
@@ -290,7 +293,7 @@ router.post('/passkey/register-options', requireAuth, async (req, res) => {
 // ─── Passkey registration verify ───
 router.post('/passkey/register-verify', requireAuth, async (req, res) => {
   try {
-    const { rpID, origin } = getWebAuthnConfig(req);
+    const { rpID, origin } = await getWebAuthnConfig(req);
     const challengeResult = await query(
       'SELECT challenge FROM webauthn_challenges WHERE session_id = $1 AND type = $2 AND expires_at > NOW()',
       [req.sessionID, 'registration']

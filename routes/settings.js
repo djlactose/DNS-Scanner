@@ -2,18 +2,51 @@
 const router = require('express').Router();
 const { query } = require('../db');
 const { requireAdmin, requireAuth, logAudit } = require('../middleware');
+const { getAllSettings, setSetting, SETTINGS_DEFINITIONS } = require('../settings-service');
 
-// ─── Toggle Google auth ───
+// ─── Toggle Google auth (legacy endpoint, uses settings service) ───
 router.put('/google-auth', requireAdmin, async (req, res) => {
   try {
     const { enabled } = req.body;
-    await query(
-      `INSERT INTO app_settings (key, value) VALUES ('google_auth_enabled', $1) ON CONFLICT (key) DO UPDATE SET value = $1`,
-      [String(enabled)]
-    );
+    await setSetting('google_auth_enabled', String(enabled));
     logAudit(req, 'settings.google_auth', 'app_settings', null, { enabled });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to update setting' }); }
+});
+
+// ─── System settings (all configurable settings) ───
+router.get('/system', requireAdmin, async (req, res) => {
+  try {
+    const settings = await getAllSettings();
+    res.json(settings);
+  } catch (err) {
+    console.error('[SETTINGS] Error loading system settings:', err.message);
+    res.status(500).json({ error: 'Failed to load system settings' });
+  }
+});
+
+router.put('/system', requireAdmin, async (req, res) => {
+  try {
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+      return res.status(400).json({ error: 'Request body must be an object of key-value pairs' });
+    }
+
+    const updated = [];
+    for (const [key, value] of Object.entries(updates)) {
+      if (!SETTINGS_DEFINITIONS[key]) continue;
+      // Skip empty strings for sensitive fields (means "keep current")
+      if (SETTINGS_DEFINITIONS[key].sensitive && !value) continue;
+      await setSetting(key, String(value));
+      updated.push(key);
+    }
+
+    logAudit(req, 'settings.system_update', 'app_settings', null, { keys: updated });
+    res.json({ ok: true, updated });
+  } catch (err) {
+    console.error('[SETTINGS] Error updating system settings:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to update system settings' });
+  }
 });
 
 // ─── Audit log ───

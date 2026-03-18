@@ -242,9 +242,11 @@ async function initSchema() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS app_settings (
         key VARCHAR(100) PRIMARY KEY,
-        value TEXT
+        value TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await client.query(`ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS webhooks (

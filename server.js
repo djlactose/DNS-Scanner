@@ -10,6 +10,7 @@ const { getPool, query, initSchema } = require('./db');
 const { startWorker } = require('./worker');
 const { csrfProtect } = require('./middleware');
 const { sseClients, setupSSE } = require('./sse');
+const { initSettings } = require('./settings-service');
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8080', 10);
@@ -162,6 +163,7 @@ async function start() {
   for (let attempt = 1; ; attempt++) {
     try {
       await initSchema();
+      await initSettings();
       break;
     } catch (err) {
       if (attempt >= MAX_RETRIES) throw err;

@@ -3,7 +3,8 @@
 const { query, initSchema } = require('./db');
 const { performScan, checkIPv6Connectivity } = require('./scanner');
 const { updateWhoisForDomain } = require('./whois');
-const { SCAN_STATUS, SCAN_TRIGGER, MAX_CONCURRENT_SCANS } = require('./constants');
+const { SCAN_STATUS, SCAN_TRIGGER } = require('./constants');
+const { getSetting, initSettings } = require('./settings-service');
 
 // ─── PostgreSQL advisory locks (replaces Redis) ───
 function lockKeyToId(key) {
@@ -42,12 +43,13 @@ async function checkScheduledScans() {
 
     const runningScans = await query('SELECT COUNT(*) as count FROM scans WHERE status = $1', [SCAN_STATUS.RUNNING]);
     let running = parseInt(runningScans.rows[0].count);
+    const maxConcurrentScans = parseInt(await getSetting('max_concurrent_scans'), 10) || 3;
 
     // Update worker heartbeat
     await query("INSERT INTO app_settings (key, value) VALUES ('worker_last_scan_check', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
 
     for (const domain of domains.rows) {
-      if (running >= MAX_CONCURRENT_SCANS) break;
+      if (running >= maxConcurrentScans) break;
 
       const lockKey = `scan:${domain.id}`;
       if (!(await acquireLock(lockKey))) continue;
@@ -187,7 +189,7 @@ if (require.main === module) {
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) { console.error('[FATAL] Missing/short SESSION_SECRET'); process.exit(1); }
   if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) { console.error('[FATAL] Missing/short ENCRYPTION_KEY'); process.exit(1); }
 
-  initSchema().then(() => startWorker()).catch(err => {
+  initSchema().then(() => initSettings()).then(() => startWorker()).catch(err => {
     console.error('[FATAL]', err.message || err);
     if (err.stack) console.error(err.stack);
     process.exit(1);
