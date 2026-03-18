@@ -5,7 +5,9 @@ RUN apk add --no-cache bind-tools whois iputils
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+    && (npm ci --omit=dev 2>/dev/null || npm install --omit=dev) \
+    && apk del .build-deps
 
 COPY . .
 RUN sed -i 's/\r$//' /app/docker/entrypoint.sh && chmod +x /app/docker/entrypoint.sh
