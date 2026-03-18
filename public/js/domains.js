@@ -97,7 +97,7 @@ Object.assign(App, {
       const dotClass = this.scanningDomains.has(d.id) ? 'scanning' : deadCount > 0 ? 'dead' : 'alive';
       const tags = (typeof d.tags === 'string' ? JSON.parse(d.tags) : d.tags) || [];
       const tagHtml = tags.filter(t => t && t.name).map(t => `<span class="tag" style="background:${this.esc(t.color)}">${this.esc(t.name)}</span>`).join('');
-      return `<div class="domain-card card" onclick="App.navigate('domains/${d.id}')">
+      return `<div class="domain-card card" data-id="${d.id}" onclick="App.navigate('domains/${d.id}')">
         ${isAdmin ? `<input type="checkbox" class="domain-check" data-id="${d.id}" onclick="event.stopPropagation(); App.updateBulkBar()" ${this.selectedDomains.has(d.id) ? 'checked' : ''}>` : ''}
         <div class="domain-dot ${dotClass}"></div>
         <div class="domain-info">
@@ -108,6 +108,7 @@ Object.assign(App, {
           <button class="btn-sm btn-secondary" onclick="App.scanDomain(${d.id})" ${this.scanningDomains.has(d.id) ? 'disabled' : ''}>${this.scanningDomains.has(d.id) ? 'Scanning...' : 'Scan Now'}</button>
           ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)">&#10005;</button>` : ''}
         </div>
+        ${this.scanningDomains.has(d.id) ? `<div class="scan-progress" data-domain-id="${d.id}"><div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Starting scan...</div></div>` : ''}
       </div>`;
     }).join('');
   },
@@ -334,6 +335,7 @@ Object.assign(App, {
             <button class="btn-secondary" onclick="window.open('/api/domains/${id}/export/report')">Report</button>
           </div>
         </div>
+        ${this.scanningDomains.has(parseInt(id)) ? `<div class="scan-progress" data-domain-id="${id}"><div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Starting scan...</div></div>` : ''}
         <div class="filter-pills">
           <span class="pill active" data-filter="all" onclick="App.filterRecords('all', this)">All (${records.length})</span>
           <span class="pill" data-filter="alive" onclick="App.filterRecords('alive', this)">Alive (${aliveCount})</span>

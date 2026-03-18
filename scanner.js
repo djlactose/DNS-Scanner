@@ -528,7 +528,10 @@ async function performScan(domain, scanId) {
     }
 
     // Step 3: Health check all records
-    let alive = 0, dead = 0;
+    let alive = 0, dead = 0, checked = 0;
+    const totalToCheck = recordsToCheck.length;
+    broadcastSSE({ type: 'scan_progress', domainId: domain.id, scanId, phase: 'enumerating', checked: 0, total: totalToCheck });
+
     const checkPromises = recordsToCheck.map(async (record) => {
       await scanSemaphore.acquire();
       try {
@@ -562,6 +565,9 @@ async function performScan(domain, scanId) {
 
         if (healthResult.status === HEALTH_STATUS.ALIVE) alive++;
         else if (healthResult.status === HEALTH_STATUS.DEAD || healthResult.status === HEALTH_STATUS.TAKEOVER_RISK) dead++;
+
+        checked++;
+        broadcastSSE({ type: 'scan_progress', domainId: domain.id, scanId, phase: 'checking', checked, total: totalToCheck, alive, dead });
 
         return healthResult;
       } finally {

@@ -128,17 +128,53 @@ const App = {
         const data = JSON.parse(e.data);
         if (data.type === 'scan_completed') {
           this.scanningDomains.delete(data.domainId);
+          this.updateScanProgress(data.domainId, null);
           this.toast(`Scan complete: ${data.alive} alive, ${data.dead} dead`, data.dead > 0 ? 'warning' : 'success');
           if (this.currentRoute === 'dashboard') this.renderDashboard();
           if (this.currentRoute === 'domains') this.route();
         } else if (data.type === 'scan_started') {
           this.scanningDomains.add(data.domainId);
+          this.updateScanProgress(data.domainId, { phase: 'starting', checked: 0, total: 0 });
+        } else if (data.type === 'scan_progress') {
+          this.updateScanProgress(data.domainId, data);
         } else if (data.type === 'scan_failed') {
           this.scanningDomains.delete(data.domainId);
+          this.updateScanProgress(data.domainId, null);
           this.toast(`Scan failed: ${data.error}`, 'error');
         }
       } catch (e) {}
     };
+  },
+
+  updateScanProgress(domainId, data) {
+    // Update all progress bars for this domain
+    const bars = document.querySelectorAll(`.scan-progress[data-domain-id="${domainId}"]`);
+    bars.forEach(bar => {
+      if (!data) {
+        bar.remove();
+        return;
+      }
+      const pct = data.total > 0 ? Math.round((data.checked / data.total) * 100) : 0;
+      const label = data.phase === 'enumerating' ? 'Discovering records...'
+        : data.phase === 'starting' ? 'Starting scan...'
+        : `Checking ${data.checked}/${data.total} records`;
+      bar.querySelector('.progress-fill').style.width = `${pct}%`;
+      bar.querySelector('.progress-label').textContent = label;
+    });
+    // Create progress bar on domain cards if not present
+    if (data && !bars.length) {
+      const card = document.querySelector(`.domain-card[data-id="${domainId}"], .page-header`);
+      if (card) {
+        const existing = card.querySelector('.scan-progress');
+        if (!existing) {
+          const el = document.createElement('div');
+          el.className = 'scan-progress';
+          el.dataset.domainId = domainId;
+          el.innerHTML = `<div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Starting scan...</div>`;
+          card.appendChild(el);
+        }
+      }
+    }
   },
 
   // ─── Layout ───
