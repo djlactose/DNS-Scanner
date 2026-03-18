@@ -12,6 +12,7 @@ const {
   COMMON_PORTS, MX_PORTS, PRIVATE_RANGES_V4, COMMON_SUBDOMAINS,
 } = require('./constants');
 const { getSetting } = require('./settings-service');
+const { fetchProviderRecords } = require('./dns-providers');
 
 // ─── Runtime settings (refreshed at the start of each scan) ───
 let _allowPrivateRanges = false;
@@ -187,7 +188,18 @@ async function enumerateDNS(domain) {
   const resolver = new dns.promises.Resolver();
   resolver.setServers(['8.8.8.8', '1.1.1.1']);
 
-  // Try AXFR first
+  // ─── DNS provider APIs (Cloudflare, Route 53, DigitalOcean) ───
+  try {
+    const providerRecords = await fetchProviderRecords(domain);
+    if (providerRecords.length > 0) {
+      console.log(`[SCANNER] DNS providers returned ${providerRecords.length} records for ${domain}`);
+      records.push(...providerRecords);
+    }
+  } catch (e) {
+    console.log(`[SCANNER] DNS provider fetch error for ${domain}: ${e.message}`);
+  }
+
+  // Try AXFR zone transfer
   const axfrRecords = await attemptAXFR(domain);
   if (axfrRecords.length > 0) {
     console.log(`[SCANNER] AXFR successful for ${domain}: ${axfrRecords.length} records`);

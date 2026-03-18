@@ -24,6 +24,12 @@ const SETTINGS_DEFINITIONS = {
   scan_timeout_ms:                { envVar: null, default: '60000', type: 'number', category: 'scanner', label: 'Scan Timeout (ms)',              sensitive: false, description: 'Overall timeout in milliseconds for a full domain scan' },
   max_concurrent_checks:          { envVar: null, default: '10',    type: 'number', category: 'scanner', label: 'Max Concurrent Health Checks',   sensitive: false, description: 'Maximum number of health checks running in parallel' },
   max_concurrent_scans:           { envVar: null, default: '3',     type: 'number', category: 'scanner', label: 'Max Concurrent Scans',           sensitive: false, description: 'Maximum number of domain scans running in parallel' },
+
+  // DNS Provider Integrations
+  cloudflare_api_token:  { envVar: 'CLOUDFLARE_API_TOKEN',  default: '', type: 'string',  category: 'integrations', label: 'Cloudflare API Token',       sensitive: true,  description: 'API token with Zone:Read and DNS:Read permissions. Creates a complete zone export for Cloudflare-managed domains.' },
+  route53_access_key:    { envVar: 'ROUTE53_ACCESS_KEY',    default: '', type: 'string',  category: 'integrations', label: 'AWS Access Key ID',          sensitive: true,  description: 'AWS access key for Route 53 DNS. Needs route53:ListHostedZones and route53:ListResourceRecordSets permissions.' },
+  route53_secret_key:    { envVar: 'ROUTE53_SECRET_KEY',    default: '', type: 'string',  category: 'integrations', label: 'AWS Secret Access Key',      sensitive: true,  description: 'AWS secret key for Route 53 DNS.' },
+  digitalocean_api_token: { envVar: 'DIGITALOCEAN_API_TOKEN', default: '', type: 'string', category: 'integrations', label: 'DigitalOcean API Token',    sensitive: true,  description: 'Personal access token for DigitalOcean DNS. Provides complete zone records for DO-managed domains.' },
 };
 
 // ─── In-memory cache ───
