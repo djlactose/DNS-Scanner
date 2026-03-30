@@ -30,7 +30,7 @@ Object.assign(App, {
       case 'system':
         try {
           const sysSettings = await this.api('/settings/system');
-          const categories = { general: 'General', auth: 'Authentication & OAuth', scanner: 'Scanner Performance' };
+          const categories = { general: 'General', auth: 'Authentication & OAuth', scanner: 'Scanner Performance', integrations: 'DNS Provider Integrations' };
           let shtml = '<h3 style="margin-bottom:16px">System Settings</h3>';
           shtml += '<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">These settings can also be seeded from Docker environment variables on first run. Once saved here, the database values take precedence.</p>';
           for (const [catKey, catLabel] of Object.entries(categories)) {
