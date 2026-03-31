@@ -517,6 +517,44 @@ Object.assign(App, {
     }
   },
 
+  async setHealthCheckPort(recordId) {
+    const input = document.getElementById('health-check-port-input');
+    const port = parseInt(input?.value);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      this.toast('Enter a valid port (1-65535)', 'error');
+      return;
+    }
+    try {
+      await this.api(`/records/${recordId}/health-port`, { method: 'PUT', body: { port } });
+      this.toast(`Health check port set to ${port}`, 'success');
+      this.closeDrawer();
+      const domainId = this._currentDomain?.id;
+      if (domainId) {
+        this._currentRecords = await this.api(`/domains/${domainId}/records`);
+        this.renderRecordsTable();
+      }
+      this.showRecordDetail(recordId);
+    } catch (e) {
+      this.toast(`Failed to set port: ${e.message}`, 'error');
+    }
+  },
+
+  async clearHealthCheckPort(recordId) {
+    try {
+      await this.api(`/records/${recordId}/health-port`, { method: 'PUT', body: { port: null } });
+      this.toast('Health check port cleared — using default checks', 'success');
+      this.closeDrawer();
+      const domainId = this._currentDomain?.id;
+      if (domainId) {
+        this._currentRecords = await this.api(`/domains/${domainId}/records`);
+        this.renderRecordsTable();
+      }
+      this.showRecordDetail(recordId);
+    } catch (e) {
+      this.toast(`Failed to clear port: ${e.message}`, 'error');
+    }
+  },
+
   async showRecordDetail(recordId) {
     const record = this._currentRecords?.find(r => r.id === recordId);
     if (!record) return;
@@ -562,7 +600,21 @@ Object.assign(App, {
         const name = portNames[p] || p;
         drawerHtml += `<span class="port-badge ${open ? 'open' : 'closed'}">${name} (${p}) ${open ? '&#10004;' : '&#10008;'}</span>`;
       }
-      drawerHtml += `</div><button class="btn-sm btn-secondary" style="margin-top:8px" onclick="App.portScanRecord(${record.id})">Rescan All Ports</button></div>`;
+      drawerHtml += `</div><button class="btn-sm btn-secondary" style="margin-top:8px" onclick="App.portScanRecord(${record.id})">Rescan All Ports</button>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <h4 style="margin:0 0 8px">Custom Health Check Port</h4>
+          ${record.health_check_port
+            ? `<div style="margin-bottom:8px"><span style="font-size:13px">Currently set to <strong>${record.health_check_port}</strong> — only this port is checked during scans.</span>
+               <a href="#" style="font-size:13px;margin-left:8px" onclick="event.preventDefault();App.clearHealthCheckPort(${record.id})">Clear</a></div>`
+            : `<div style="margin-bottom:8px;font-size:13px;color:var(--text-muted)">No custom port set — using default health checks.</div>`}
+          <div style="display:flex;align-items:center;gap:8px">
+            <input id="health-check-port-input" type="number" min="1" max="65535" placeholder="Port #" value="${record.health_check_port || ''}"
+              style="width:90px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text)"
+              onkeydown="if(event.key==='Enter')App.setHealthCheckPort(${record.id})">
+            <button class="btn-sm btn-secondary" onclick="App.setHealthCheckPort(${record.id})">Set Port</button>
+          </div>
+        </div>
+      </div>`;
     }
 
     // SSL

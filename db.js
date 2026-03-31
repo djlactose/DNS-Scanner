@@ -367,6 +367,7 @@ async function initSchema() {
     // ─── Port scan columns on dns_records ───
     await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS known_ports JSONB DEFAULT '[]'`);
     await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS last_port_scan TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS health_check_port INTEGER`);
 
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');

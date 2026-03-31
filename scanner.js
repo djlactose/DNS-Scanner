@@ -188,16 +188,31 @@ async function enumerateDNS(domain) {
   const resolver = new dns.promises.Resolver();
   resolver.setServers(['8.8.8.8', '1.1.1.1']);
 
-  // ─── DNS provider APIs (Cloudflare, Route 53, DigitalOcean) ───
+  // ─── DNS provider APIs (Cloudflare, Route 53, DigitalOcean, GoDaddy) ───
+  let providerResult = { records: [], authoritative: false, providers: [] };
   try {
-    const providerRecords = await fetchProviderRecords(domain);
-    if (providerRecords.length > 0) {
-      console.log(`[SCANNER] DNS providers returned ${providerRecords.length} records for ${domain}`);
-      records.push(...providerRecords);
+    providerResult = await fetchProviderRecords(domain);
+    if (providerResult.records.length > 0) {
+      console.log(`[SCANNER] DNS providers returned ${providerResult.records.length} records for ${domain} (authoritative: ${providerResult.authoritative}, providers: ${providerResult.providers.join(', ')})`);
     }
   } catch (e) {
     console.log(`[SCANNER] DNS provider fetch error for ${domain}: ${e.message}`);
   }
+
+  // When a provider is authoritative, use only its records as the source of truth
+  if (providerResult.authoritative) {
+    const seen = new Set();
+    const deduped = providerResult.records.filter(r => {
+      const key = `${r.type}:${r.name}:${r.value}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    console.log(`[SCANNER] Provider-authoritative mode for ${domain}: ${deduped.length} records from ${providerResult.providers.join(', ')}`);
+    return { records: deduped, authoritative: true, providers: providerResult.providers };
+  }
+
+  records.push(...providerResult.records);
 
   // Try AXFR zone transfer
   const axfrRecords = await attemptAXFR(domain);
@@ -375,12 +390,13 @@ async function enumerateDNS(domain) {
 
   // Deduplicate
   const seen = new Set();
-  return records.filter(r => {
+  const deduped = records.filter(r => {
     const key = `${r.type}:${r.name}:${r.value}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return { records: deduped, authoritative: false, providers: [] };
 }
 
 async function tcpCheck(host, port, timeoutMs = _healthCheckTimeoutMs) {
@@ -532,6 +548,28 @@ async function healthCheckRecord(record, domain) {
   }
 
   try {
+    // ─── Custom health check port override ───
+    if (record.health_check_port) {
+      const port = record.health_check_port;
+      const open = await tcpCheck(targetHost, port);
+      if (open) {
+        result.status = HEALTH_STATUS.ALIVE;
+        result.checkMethod = `tcp:${port}`;
+        result.portsOpen = [port];
+        // Collect SSL info if checking port 443
+        if (port === 443) {
+          const ssl = await getSSLInfo(targetHost);
+          if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
+        }
+      } else {
+        result.status = HEALTH_STATUS.DEAD;
+        result.errorMessage = `Custom health check port ${port} is not responding`;
+        result.checkMethod = `tcp:${port}`;
+      }
+      result.responseMs = Date.now() - startTime;
+      return result;
+    }
+
     if (record.record_type === 'A' || record.record_type === 'AAAA' || record.record_type === 'CNAME') {
 
       if (needsPortScan) {
@@ -684,8 +722,9 @@ async function performScan(domain, scanId) {
 
   try {
     // Step 1: Enumerate DNS records
-    const dnsRecords = await enumerateDNS(domain.domain);
-    console.log(`[SCANNER] Found ${dnsRecords.length} DNS records for ${domain.domain}`);
+    const enumResult = await enumerateDNS(domain.domain);
+    const dnsRecords = enumResult.records;
+    console.log(`[SCANNER] Found ${dnsRecords.length} DNS records for ${domain.domain} (authoritative: ${enumResult.authoritative})`);
 
     // Step 2: Diff with stored records
     const existingRecords = await query(
@@ -830,4 +869,4 @@ async function portScanRecord(recordId) {
   return { portsOpen: healthResult.portsOpen, status: healthResult.status };
 }
 
-module.exports = { performScan, enumerateDNS, healthCheckRecord, fullPortScan, portScanRecord, checkIPv6Connectivity, hasIPv6 };
+module.exports = { performScan, enumerateDNS, healthCheckRecord, fullPortScan, portScanRecord, tcpCheck, checkIPv6Connectivity, hasIPv6 };

@@ -370,6 +370,26 @@ router.post('/records/:id/port-scan', requireAuth, validateId, async (req, res) 
   }
 });
 
+// ─── Set custom health check port ───
+router.put('/records/:id/health-port', requireAuth, requireAdmin, validateId, async (req, res) => {
+  try {
+    const port = req.body.port;
+    if (port !== null) {
+      const p = parseInt(port);
+      if (!Number.isInteger(p) || p < 1 || p > 65535) {
+        return res.status(400).json({ error: 'Port must be between 1 and 65535' });
+      }
+      await query('UPDATE dns_records SET health_check_port = $1 WHERE id = $2', [p, req.params.id]);
+    } else {
+      await query('UPDATE dns_records SET health_check_port = NULL WHERE id = $1', [req.params.id]);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[HEALTH-PORT] Error:', err.message);
+    res.status(500).json({ error: 'Failed to update health check port' });
+  }
+});
+
 // ─── CSV export ───
 router.get('/domains/:id/export/csv', requireAuth, validateId, async (req, res) => {
   try {
