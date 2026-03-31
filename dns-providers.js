@@ -7,7 +7,7 @@ const { RECORD_TYPES } = require('./constants');
 
 async function fetchCloudflareRecords(domain) {
   const token = await getSetting('cloudflare_api_token');
-  if (!token) return [];
+  if (!token) return { records: [], zoneFound: false };
 
   try {
     // Find zone ID for this domain
@@ -15,7 +15,7 @@ async function fetchCloudflareRecords(domain) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
     const zoneData = await zoneRes.json();
-    if (!zoneData.success || !zoneData.result?.length) return [];
+    if (!zoneData.success || !zoneData.result?.length) return { records: [], zoneFound: false };
 
     const zoneId = zoneData.result[0].id;
 
@@ -48,10 +48,10 @@ async function fetchCloudflareRecords(domain) {
     }
 
     console.log(`[PROVIDER] Cloudflare: ${records.length} records for ${domain}`);
-    return records;
+    return { records, zoneFound: true };
   } catch (e) {
     console.log(`[PROVIDER] Cloudflare failed for ${domain}: ${e.message}`);
-    return [];
+    return { records: [], zoneFound: false };
   }
 }
 
@@ -97,7 +97,7 @@ function getRoute53SignatureHeaders(accessKey, secretKey, region, service, metho
 async function fetchRoute53Records(domain) {
   const accessKey = await getSetting('route53_access_key');
   const secretKey = await getSetting('route53_secret_key');
-  if (!accessKey || !secretKey) return [];
+  if (!accessKey || !secretKey) return { records: [], zoneFound: false };
 
   try {
     const region = 'us-east-1';
@@ -110,7 +110,7 @@ async function fetchRoute53Records(domain) {
 
     // Parse XML to find hosted zone ID
     const zoneIdMatch = listText.match(/<HostedZone>.*?<Id>\/hostedzone\/(.*?)<\/Id>.*?<Name>(.*?)<\/Name>/s);
-    if (!zoneIdMatch || !zoneIdMatch[2].replace(/\.$/, '').endsWith(domain)) return [];
+    if (!zoneIdMatch || !zoneIdMatch[2].replace(/\.$/, '').endsWith(domain)) return { records: [], zoneFound: false };
     const zoneId = zoneIdMatch[1];
 
     // List all record sets
@@ -160,10 +160,10 @@ async function fetchRoute53Records(domain) {
     }
 
     console.log(`[PROVIDER] Route 53: ${records.length} records for ${domain}`);
-    return records;
+    return { records, zoneFound: true };
   } catch (e) {
     console.log(`[PROVIDER] Route 53 failed for ${domain}: ${e.message}`);
-    return [];
+    return { records: [], zoneFound: false };
   }
 }
 
@@ -171,7 +171,7 @@ async function fetchRoute53Records(domain) {
 
 async function fetchDigitalOceanRecords(domain) {
   const token = await getSetting('digitalocean_api_token');
-  if (!token) return [];
+  if (!token) return { records: [], zoneFound: false };
 
   try {
     const records = [];
@@ -180,7 +180,7 @@ async function fetchDigitalOceanRecords(domain) {
       const res = await fetch(`https://api.digitalocean.com/v2/domains/${encodeURIComponent(domain)}/records?per_page=200&page=${page}`, {
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       });
-      if (!res.ok) break;
+      if (!res.ok) return { records: [], zoneFound: false };
       const data = await res.json();
 
       for (const r of data.domain_records) {
@@ -199,10 +199,10 @@ async function fetchDigitalOceanRecords(domain) {
     }
 
     console.log(`[PROVIDER] DigitalOcean: ${records.length} records for ${domain}`);
-    return records;
+    return { records, zoneFound: true };
   } catch (e) {
     console.log(`[PROVIDER] DigitalOcean failed for ${domain}: ${e.message}`);
-    return [];
+    return { records: [], zoneFound: false };
   }
 }
 
@@ -211,13 +211,13 @@ async function fetchDigitalOceanRecords(domain) {
 async function fetchGoDaddyRecords(domain) {
   const apiKey = await getSetting('godaddy_api_key');
   const apiSecret = await getSetting('godaddy_api_secret');
-  if (!apiKey || !apiSecret) return [];
+  if (!apiKey || !apiSecret) return { records: [], zoneFound: false };
 
   try {
     const res = await fetch(`https://api.godaddy.com/v1/domains/${encodeURIComponent(domain)}/records`, {
       headers: { 'Authorization': `sso-key ${apiKey}:${apiSecret}`, 'Content-Type': 'application/json' },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { records: [], zoneFound: false };
     const data = await res.json();
 
     const records = [];
@@ -233,10 +233,10 @@ async function fetchGoDaddyRecords(domain) {
     }
 
     console.log(`[PROVIDER] GoDaddy: ${records.length} records for ${domain}`);
-    return records;
+    return { records, zoneFound: true };
   } catch (e) {
     console.log(`[PROVIDER] GoDaddy failed for ${domain}: ${e.message}`);
-    return [];
+    return { records: [], zoneFound: false };
   }
 }
 
@@ -250,14 +250,23 @@ async function fetchProviderRecords(domain) {
     fetchGoDaddyRecords(domain),
   ]);
 
+  const NAMES = ['cloudflare', 'route53', 'digitalocean', 'godaddy'];
   const allRecords = [];
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value.length > 0) {
-      allRecords.push(...result.value);
+  const providers = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'fulfilled' && result.value.zoneFound) {
+      providers.push(NAMES[i]);
+      allRecords.push(...result.value.records);
     }
   }
 
-  return allRecords;
+  return {
+    records: allRecords,
+    authoritative: providers.length > 0 && allRecords.length > 0,
+    providers,
+  };
 }
 
 module.exports = { fetchProviderRecords, fetchCloudflareRecords, fetchRoute53Records, fetchDigitalOceanRecords, fetchGoDaddyRecords };
