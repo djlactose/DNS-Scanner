@@ -579,13 +579,14 @@ async function healthCheckRecord(record, domain) {
         result.portsOpen = discovered.map(p => p.port);
         result._knownPorts = discovered; // pass to caller for DB storage
 
-        // Check HTTPS specifically for SSL info (use hostname for SNI/virtual hosting)
+        // Check HTTPS/HTTP for status code + SSL info (use hostname for SNI, already confirmed open via TCP)
         if (result.portsOpen.includes(443)) {
           const httpsResult = await httpCheck(targetHost, 443, true);
           if (httpsResult.alive) { result.statusCode = httpsResult.statusCode; result.checkMethod = 'https'; }
           const ssl = await getSSLInfo(targetHost);
           if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
-        } else if (result.portsOpen.includes(80)) {
+        }
+        if (!result.checkMethod && result.portsOpen.includes(80)) {
           const httpResult = await httpCheck(targetHost, 80, false);
           if (httpResult.alive) { result.statusCode = httpResult.statusCode; result.checkMethod = 'http'; }
         }
@@ -603,7 +604,7 @@ async function healthCheckRecord(record, domain) {
         const knownPorts = (record.known_ports || []);
         const portsToCheck = [...new Set([...knownPorts, 80, 443])];
 
-        // Always check HTTPS/HTTP first for status code + SSL (use hostname for SNI/virtual hosting)
+        // Check HTTPS first for status code + SSL, fall back to TCP if hostname doesn't resolve
         if (portsToCheck.includes(443)) {
           const httpsResult = await httpCheck(targetHost, 443, true);
           if (httpsResult.alive) {
@@ -611,6 +612,9 @@ async function healthCheckRecord(record, domain) {
             result.statusCode = httpsResult.statusCode;
             result.checkMethod = 'https';
             result.portsOpen.push(443);
+          } else {
+            const tcpOpen = await tcpCheck(targetIP, 443);
+            if (tcpOpen) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'tcp:443'; result.portsOpen.push(443); }
           }
           const ssl = await getSSLInfo(targetHost);
           if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
@@ -622,6 +626,9 @@ async function healthCheckRecord(record, domain) {
             result.statusCode = httpResult.statusCode;
             result.checkMethod = 'http';
             result.portsOpen.push(80);
+          } else {
+            const tcpOpen = await tcpCheck(targetIP, 80);
+            if (tcpOpen) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'tcp:80'; result.portsOpen.push(80); }
           }
         }
 
