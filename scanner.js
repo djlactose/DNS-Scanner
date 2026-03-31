@@ -575,11 +575,11 @@ async function healthCheckRecord(record, domain) {
 
       if (needsPortScan) {
         // ─── Full port scan (first discovery or manual rescan) ───
-        const discovered = await fullPortScan(targetHost);
+        const discovered = await fullPortScan(targetIP);
         result.portsOpen = discovered.map(p => p.port);
         result._knownPorts = discovered; // pass to caller for DB storage
 
-        // Check HTTPS specifically for SSL info
+        // Check HTTPS specifically for SSL info (use hostname for SNI/virtual hosting)
         if (result.portsOpen.includes(443)) {
           const httpsResult = await httpCheck(targetHost, 443, true);
           if (httpsResult.alive) { result.statusCode = httpsResult.statusCode; result.checkMethod = 'https'; }
@@ -594,7 +594,7 @@ async function healthCheckRecord(record, domain) {
           result.status = HEALTH_STATUS.ALIVE;
           if (!result.checkMethod) result.checkMethod = `tcp:${result.portsOpen[0]}`;
         } else {
-          const pingOk = await icmpPing(targetHost);
+          const pingOk = await icmpPing(targetIP);
           if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
         }
 
@@ -603,7 +603,7 @@ async function healthCheckRecord(record, domain) {
         const knownPorts = (record.known_ports || []);
         const portsToCheck = [...new Set([...knownPorts, 80, 443])];
 
-        // Always check HTTPS/HTTP first for status code + SSL
+        // Always check HTTPS/HTTP first for status code + SSL (use hostname for SNI/virtual hosting)
         if (portsToCheck.includes(443)) {
           const httpsResult = await httpCheck(targetHost, 443, true);
           if (httpsResult.alive) {
@@ -625,16 +625,16 @@ async function healthCheckRecord(record, domain) {
           }
         }
 
-        // Check remaining ports
+        // Check remaining ports via TCP using IP directly
         for (const port of portsToCheck) {
           if (port === 443 || port === 80) continue;
-          const open = await tcpCheck(targetHost, port);
+          const open = await tcpCheck(targetIP, port);
           if (open) { result.portsOpen.push(port); if (result.status !== HEALTH_STATUS.ALIVE) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; } }
         }
 
         // ICMP ping fallback
         if (result.status !== HEALTH_STATUS.ALIVE) {
-          const pingOk = await icmpPing(targetHost);
+          const pingOk = await icmpPing(targetIP);
           if (pingOk) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = 'icmp'; }
         }
       }
