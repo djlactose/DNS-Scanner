@@ -690,6 +690,7 @@ Object.assign(App, {
     drawer.classList.remove('hidden');
     requestAnimationFrame(() => drawer.classList.add('open'));
     overlay.classList.remove('hidden');
-    overlay.onclick = () => this.closeDrawer();
+    overlay.style.display = '';
+    overlay.onclick = () => App.closeDrawer();
   },
 });

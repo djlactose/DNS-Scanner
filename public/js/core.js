@@ -312,7 +312,7 @@ const App = {
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('modal-overlay');
     drawer.classList.remove('open');
-    if (overlay) overlay.classList.add('hidden');
+    if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; overlay.onclick = null; }
     setTimeout(() => { drawer.classList.add('hidden'); drawer.innerHTML = ''; }, 250);
   },
 
