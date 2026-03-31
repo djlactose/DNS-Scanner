@@ -313,6 +313,10 @@ const App = {
     const overlay = document.getElementById('modal-overlay');
     drawer.classList.remove('open');
     if (overlay) { overlay.classList.add('hidden'); overlay.style.display = 'none'; overlay.onclick = null; }
+    if (this._drawerClickHandler) {
+      document.removeEventListener('click', this._drawerClickHandler);
+      this._drawerClickHandler = null;
+    }
     setTimeout(() => { drawer.classList.add('hidden'); drawer.innerHTML = ''; }, 250);
   },
 

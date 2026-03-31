@@ -691,6 +691,13 @@ Object.assign(App, {
     requestAnimationFrame(() => drawer.classList.add('open'));
     overlay.classList.remove('hidden');
     overlay.style.display = '';
-    overlay.onclick = () => App.closeDrawer();
+    // Close drawer when clicking overlay or anywhere outside the drawer
+    overlay.onclick = (e) => { e.stopPropagation(); App.closeDrawer(); };
+    this._drawerClickHandler = (e) => {
+      if (!drawer.contains(e.target) && !overlay.classList.contains('hidden')) {
+        App.closeDrawer();
+      }
+    };
+    setTimeout(() => document.addEventListener('click', this._drawerClickHandler), 100);
   },
 });

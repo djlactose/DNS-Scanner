@@ -860,6 +860,14 @@ async function portScanRecord(recordId) {
     await query('UPDATE dns_records SET known_ports = $1, last_port_scan = NOW() WHERE id = $2',
       [JSON.stringify(healthResult.portsOpen), recordId]);
   }
+  // Write a health_checks row so the UI reflects the new status
+  await query(
+    `INSERT INTO health_checks (record_id, status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [recordId, healthResult.status, healthResult.statusCode, healthResult.responseMs,
+     healthResult.errorMessage, healthResult.checkMethod, JSON.stringify(healthResult.portsOpen),
+     healthResult.sslValid, healthResult.sslExpiresAt, healthResult.sslError]
+  );
   return { portsOpen: healthResult.portsOpen, status: healthResult.status };
 }
 
