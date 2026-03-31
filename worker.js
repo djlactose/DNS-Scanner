@@ -3,7 +3,7 @@
 const { query, initSchema } = require('./db');
 const { performScan, checkIPv6Connectivity } = require('./scanner');
 const { updateWhoisForDomain } = require('./whois');
-const { SCAN_STATUS, SCAN_TRIGGER } = require('./constants');
+const { SCAN_STATUS, SCAN_TRIGGER, CERT_EXPIRY_WARNING_DAYS } = require('./constants');
 const { getSetting, initSettings } = require('./settings-service');
 
 // ─── PostgreSQL advisory locks (replaces Redis) ───
@@ -162,6 +162,82 @@ async function checkDomainExpiry() {
   }
 }
 
+async function checkCertExpiry() {
+  try {
+    const lockKey = 'cert_expiry_check';
+    if (!(await acquireLock(lockKey))) return;
+
+    try {
+      await query("INSERT INTO app_settings (key, value) VALUES ('worker_last_cert_expiry_check', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [new Date().toISOString()]);
+
+      const { sendPushToUser, sendEmail, deliverWebhook } = require('./notifier');
+
+      const expiring = await query(`
+        SELECT DISTINCT ON (dr.id)
+          dr.id as record_id, dr.name, dr.record_type, dr.value,
+          d.id as domain_id, d.domain,
+          hc.ssl_expires_at, hc.ssl_valid, hc.ssl_error
+        FROM dns_records dr
+        JOIN domains d ON d.id = dr.domain_id
+        JOIN LATERAL (
+          SELECT ssl_expires_at, ssl_valid, ssl_error
+          FROM health_checks WHERE record_id = dr.id
+          ORDER BY checked_at DESC LIMIT 1
+        ) hc ON TRUE
+        WHERE dr.removed_at IS NULL
+          AND d.enabled = TRUE
+          AND hc.ssl_expires_at IS NOT NULL
+          AND hc.ssl_expires_at > NOW()
+          AND hc.ssl_expires_at < NOW() + INTERVAL '30 days'
+      `);
+
+      for (const record of expiring.rows) {
+        const daysUntil = Math.ceil((new Date(record.ssl_expires_at) - new Date()) / (1000 * 60 * 60 * 24));
+        const shouldWarn = CERT_EXPIRY_WARNING_DAYS.some(d => daysUntil <= d && daysUntil > d - 1);
+        if (!shouldWarn) continue;
+
+        const fqdn = record.name === '@' ? record.domain : `${record.name}.${record.domain}`;
+
+        // Notify users who opted in
+        const users = await query(`
+          SELECT u.id, u.email, ns.push_enabled, ns.email_enabled
+          FROM users u JOIN notification_settings ns ON ns.user_id = u.id
+          WHERE ns.notify_on_cert_expiry = TRUE
+        `);
+
+        for (const user of users.rows) {
+          const msg = { title: 'SSL Certificate Expiry Warning', body: `Certificate for ${fqdn} expires in ${daysUntil} day${daysUntil !== 1 ? 's' : ''} (${new Date(record.ssl_expires_at).toLocaleDateString()})` };
+          if (user.push_enabled) await sendPushToUser(user.id, msg);
+          if (user.email_enabled && user.email) {
+            try { await sendEmail(user.email, msg.title, `<h2>${msg.title}</h2><p>${msg.body}</p>`); } catch (e) {}
+          }
+        }
+
+        // Send webhooks
+        const webhooks = await query('SELECT * FROM webhooks WHERE enabled = TRUE');
+        for (const webhook of webhooks.rows) {
+          let events;
+          try { events = typeof webhook.events === 'string' ? JSON.parse(webhook.events) : (webhook.events || []); } catch (e) { events = []; }
+          if (events.includes('cert.expiry_warning')) {
+            await deliverWebhook(webhook, 'cert.expiry_warning', {
+              domain: record.domain,
+              record: { type: record.record_type, name: record.name, value: record.value },
+              ssl_expires_at: record.ssl_expires_at,
+              days_until_expiry: daysUntil,
+            });
+          }
+        }
+      }
+
+      if (expiring.rows.length > 0) console.log(`[WORKER] Found ${expiring.rows.length} certificates expiring within 30 days`);
+    } finally {
+      await releaseLock(lockKey);
+    }
+  } catch (err) {
+    console.error('[WORKER] Cert expiry check error:', err.message);
+  }
+}
+
 function startWorker() {
   console.log('[WORKER] Starting background worker...');
 
@@ -173,10 +249,13 @@ function startWorker() {
   setInterval(cleanupOldData, 60 * 60 * 1000);
   // Check domain expiry every 12 hours
   setInterval(checkDomainExpiry, 12 * 60 * 60 * 1000);
+  // Check certificate expiry every 12 hours
+  setInterval(checkCertExpiry, 12 * 60 * 60 * 1000);
 
   // Run immediately on start
   setTimeout(checkScheduledScans, 10000);
   setTimeout(checkWhoisUpdates, 30000);
+  setTimeout(checkCertExpiry, 45000);
 
   console.log('[WORKER] Background worker running');
 }

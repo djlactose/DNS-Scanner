@@ -60,6 +60,27 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       WHERE dr.removed_at IS NULL AND hc.status = 'alive' ${domainFilter}
     `, params);
 
+    const expiringCerts = await query(`
+      SELECT dr.id, dr.name, dr.record_type, dr.value, dr.domain_id,
+        d.domain, d.display_name,
+        hc.ssl_expires_at, hc.ssl_valid
+      FROM dns_records dr
+      JOIN domains d ON d.id = dr.domain_id
+      JOIN LATERAL (
+        SELECT ssl_expires_at, ssl_valid
+        FROM health_checks WHERE record_id = dr.id
+        ORDER BY checked_at DESC LIMIT 1
+      ) hc ON TRUE
+      WHERE dr.removed_at IS NULL
+        AND d.enabled = TRUE
+        AND hc.ssl_expires_at IS NOT NULL
+        AND hc.ssl_expires_at > NOW()
+        AND hc.ssl_expires_at < NOW() + INTERVAL '30 days'
+        ${domainFilter}
+      ORDER BY hc.ssl_expires_at ASC
+      LIMIT 20
+    `, params);
+
     const ipv6Result = await query("SELECT value FROM app_settings WHERE key = 'ipv6_available'");
     const ipv6Available = ipv6Result.rows.length > 0 ? ipv6Result.rows[0].value === 'true' : null;
 
@@ -68,6 +89,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       total_records: parseInt(stats.rows[0].total_records),
       alive_records: parseInt(aliveCount.rows[0].count),
       dead_records: deadRecords.rows,
+      expiring_certs: expiringCerts.rows,
       recent_changes: recentChanges.rows,
       ipv6_available: ipv6Available,
     });

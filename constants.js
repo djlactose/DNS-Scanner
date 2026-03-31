@@ -149,12 +149,14 @@ const WEBHOOK_EVENT_TYPES = [
   'record.recovered',
   'record.takeover_risk',
   'domain.expiry_warning',
+  'cert.expiry_warning',
   'scan.completed',
   'propagation.inconsistent',
   'dns.changed',
 ];
 
 const EXPIRY_WARNING_DAYS = [90, 30, 14, 7];
+const CERT_EXPIRY_WARNING_DAYS = [30, 14, 7, 1];
 
 const COMMON_SUBDOMAINS = [
   // Web & apps
@@ -224,6 +226,7 @@ module.exports = {
   WEBHOOK_EVENT_TYPES,
   FULL_SCAN_PORTS,
   EXPIRY_WARNING_DAYS,
+  CERT_EXPIRY_WARNING_DAYS,
   DOMAIN_REGEX,
   COMMON_SUBDOMAINS,
 };

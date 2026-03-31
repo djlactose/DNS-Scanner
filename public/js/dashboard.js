@@ -26,6 +26,7 @@ Object.assign(App, {
         <div class="stat-card card"><div class="stat-value">${data.total_domains}</div><div class="stat-label">Domains Monitored</div></div>
         <div class="stat-card card"><div class="stat-value" style="color:var(--status-alive)">${data.alive_records}</div><div class="stat-label">Alive Records</div></div>
         <div class="stat-card card ${deadCount > 0 ? 'dead' : ''}"><div class="stat-value">${deadCount}</div><div class="stat-label">Dead Records</div></div>
+        ${data.expiring_certs && data.expiring_certs.length > 0 ? `<div class="stat-card card"><div class="stat-value" style="color:var(--status-warning, orange)">${data.expiring_certs.length}</div><div class="stat-label">Expiring Certs</div></div>` : ''}
       </div>`;
 
       // Worker health indicator
@@ -60,6 +61,25 @@ Object.assign(App, {
         }
       } else {
         html += `<div class="card" style="text-align:center;padding:30px;color:var(--status-alive)"><div style="font-size:32px">&#10004;</div><div style="margin-top:8px">All systems healthy</div></div>`;
+      }
+
+      if (data.expiring_certs && data.expiring_certs.length > 0) {
+        html += `<div class="section-header">Expiring SSL Certificates</div>`;
+        for (const c of data.expiring_certs) {
+          const daysUntil = Math.ceil((new Date(c.ssl_expires_at) - Date.now()) / 86400000);
+          const urgency = daysUntil <= 7 ? 'var(--status-dead)' : daysUntil <= 14 ? 'var(--status-warning, orange)' : 'var(--accent)';
+          const fqdn = c.name === '@' ? c.domain : `${c.name}.${c.domain}`;
+          html += `<div class="alert-card" style="border-left-color:${urgency}">
+            <div class="alert-icon" style="color:${urgency}">&#128274;</div>
+            <div class="alert-body">
+              <div class="alert-title">${this.esc(fqdn)} &middot; ${this.esc(c.record_type)}</div>
+              <div class="alert-detail">Certificate expires in ${daysUntil} day${daysUntil !== 1 ? 's' : ''} (${new Date(c.ssl_expires_at).toLocaleDateString()})</div>
+              <div class="alert-actions">
+                <button class="btn-sm btn-secondary" onclick="App.navigate('domains/${c.domain_id}')">View</button>
+              </div>
+            </div>
+          </div>`;
+        }
       }
 
       if (data.recent_changes && data.recent_changes.length > 0) {

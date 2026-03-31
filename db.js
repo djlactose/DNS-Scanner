@@ -369,6 +369,9 @@ async function initSchema() {
     await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS last_port_scan TIMESTAMPTZ`);
     await client.query(`ALTER TABLE dns_records ADD COLUMN IF NOT EXISTS health_check_port INTEGER`);
 
+    // ─── Certificate expiry notification preference ───
+    await client.query(`ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS notify_on_cert_expiry BOOLEAN DEFAULT TRUE`);
+
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');
   } catch (err) {

@@ -125,6 +125,7 @@ Object.assign(App, {
               <label class="toggle"><input type="checkbox" id="ns-takeover" ${settings.notify_on_takeover_risk ? 'checked' : ''} onchange="App.saveNotifSettings()"><div class="toggle-track"></div>Notify on takeover risk</label>
               <label class="toggle"><input type="checkbox" id="ns-change" ${settings.notify_on_dns_change ? 'checked' : ''} onchange="App.saveNotifSettings()"><div class="toggle-track"></div>Notify on DNS changes</label>
               <label class="toggle"><input type="checkbox" id="ns-expiry" ${settings.notify_on_domain_expiry ? 'checked' : ''} onchange="App.saveNotifSettings()"><div class="toggle-track"></div>Notify on domain expiry</label>
+              <label class="toggle"><input type="checkbox" id="ns-cert-expiry" ${settings.notify_on_cert_expiry ? 'checked' : ''} onchange="App.saveNotifSettings()"><div class="toggle-track"></div>Notify on certificate expiry</label>
             </div>
             <hr style="margin:20px 0;border:none;border-top:1px solid var(--border)">
             <h3 style="margin-bottom:16px">Email Notifications</h3>
@@ -456,6 +457,7 @@ Object.assign(App, {
         notify_on_takeover_risk: document.getElementById('ns-takeover')?.checked,
         notify_on_dns_change: document.getElementById('ns-change')?.checked,
         notify_on_domain_expiry: document.getElementById('ns-expiry')?.checked,
+        notify_on_cert_expiry: document.getElementById('ns-cert-expiry')?.checked,
       }});
       this.toast('Settings saved', 'success');
     } catch (e) { this.toast(e.message, 'error'); }
@@ -622,7 +624,7 @@ Object.assign(App, {
 
   // ─── Webhooks ───
   showAddWebhook() {
-    const events = ['record.dead', 'record.recovered', 'record.takeover_risk', 'domain.expiry_warning', 'scan.completed', 'propagation.inconsistent', 'dns.changed'];
+    const events = ['record.dead', 'record.recovered', 'record.takeover_risk', 'domain.expiry_warning', 'cert.expiry_warning', 'scan.completed', 'propagation.inconsistent', 'dns.changed'];
     this.showModal('Add Webhook', `
       <div class="form-group"><label>Name</label><input id="modal-wh-name" placeholder="Slack Alert"></div>
       <div class="form-group"><label>URL</label><input id="modal-wh-url" placeholder="https://hooks.slack.com/..."></div>

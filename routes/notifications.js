@@ -10,7 +10,7 @@ router.get('/notifications/settings', requireAuth, async (req, res) => {
     const result = await query('SELECT * FROM notification_settings WHERE user_id = $1', [req.session.userId]);
     if (result.rows.length === 0) {
       await query('INSERT INTO notification_settings (user_id) VALUES ($1)', [req.session.userId]);
-      return res.json({ user_id: req.session.userId, email_enabled: false, push_enabled: false, notify_on_dead: true, notify_on_recovery: true, notify_on_takeover_risk: true, notify_on_dns_change: true, notify_on_domain_expiry: true, notify_tags_only: null });
+      return res.json({ user_id: req.session.userId, email_enabled: false, push_enabled: false, notify_on_dead: true, notify_on_recovery: true, notify_on_takeover_risk: true, notify_on_dns_change: true, notify_on_domain_expiry: true, notify_on_cert_expiry: true, notify_tags_only: null });
     }
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: 'Failed to fetch settings' }); }
@@ -19,10 +19,10 @@ router.get('/notifications/settings', requireAuth, async (req, res) => {
 // ─── Update notification settings ───
 router.put('/notifications/settings', requireAuth, async (req, res) => {
   try {
-    const { email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_tags_only } = req.body;
+    const { email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_on_cert_expiry, notify_tags_only } = req.body;
     await query(`
-      INSERT INTO notification_settings (user_id, email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_tags_only)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO notification_settings (user_id, email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_on_cert_expiry, notify_tags_only)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       ON CONFLICT (user_id) DO UPDATE SET
         email_enabled = COALESCE($2, notification_settings.email_enabled),
         push_enabled = COALESCE($3, notification_settings.push_enabled),
@@ -31,8 +31,9 @@ router.put('/notifications/settings', requireAuth, async (req, res) => {
         notify_on_takeover_risk = COALESCE($6, notification_settings.notify_on_takeover_risk),
         notify_on_dns_change = COALESCE($7, notification_settings.notify_on_dns_change),
         notify_on_domain_expiry = COALESCE($8, notification_settings.notify_on_domain_expiry),
-        notify_tags_only = COALESCE($9, notification_settings.notify_tags_only)
-    `, [req.session.userId, email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_tags_only ? JSON.stringify(notify_tags_only) : null]);
+        notify_on_cert_expiry = COALESCE($9, notification_settings.notify_on_cert_expiry),
+        notify_tags_only = COALESCE($10, notification_settings.notify_tags_only)
+    `, [req.session.userId, email_enabled, push_enabled, notify_on_dead, notify_on_recovery, notify_on_takeover_risk, notify_on_dns_change, notify_on_domain_expiry, notify_on_cert_expiry, notify_tags_only ? JSON.stringify(notify_tags_only) : null]);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: 'Failed to update settings' }); }
 });
