@@ -551,7 +551,8 @@ async function healthCheckRecord(record, domain) {
     // ─── Custom health check port override ───
     if (record.health_check_port) {
       const port = record.health_check_port;
-      const open = await tcpCheck(targetHost, port);
+      const checkHost = record.record_type === 'CNAME' ? targetHost : targetIP;
+      const open = await tcpCheck(checkHost, port);
       if (open) {
         result.status = HEALTH_STATUS.ALIVE;
         result.checkMethod = `tcp:${port}`;
@@ -598,11 +599,12 @@ async function healthCheckRecord(record, domain) {
         }
 
       } else {
-        // ─── Quick check: only check previously known ports ───
+        // ─── Quick check: known ports + always include 80/443 ───
         const knownPorts = (record.known_ports || []);
+        const portsToCheck = [...new Set([...knownPorts, 80, 443])];
 
         // Always check HTTPS/HTTP first for status code + SSL
-        if (knownPorts.includes(443)) {
+        if (portsToCheck.includes(443)) {
           const httpsResult = await httpCheck(targetHost, 443, true);
           if (httpsResult.alive) {
             result.status = HEALTH_STATUS.ALIVE;
@@ -613,7 +615,7 @@ async function healthCheckRecord(record, domain) {
           const ssl = await getSSLInfo(targetHost);
           if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
         }
-        if (result.status !== HEALTH_STATUS.ALIVE && knownPorts.includes(80)) {
+        if (result.status !== HEALTH_STATUS.ALIVE && portsToCheck.includes(80)) {
           const httpResult = await httpCheck(targetHost, 80, false);
           if (httpResult.alive) {
             result.status = HEALTH_STATUS.ALIVE;
@@ -623,19 +625,11 @@ async function healthCheckRecord(record, domain) {
           }
         }
 
-        // Check remaining known ports
-        for (const port of knownPorts) {
+        // Check remaining ports
+        for (const port of portsToCheck) {
           if (port === 443 || port === 80) continue;
           const open = await tcpCheck(targetHost, port);
           if (open) { result.portsOpen.push(port); if (result.status !== HEALTH_STATUS.ALIVE) { result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; } }
-        }
-
-        // If no known ports, fall back to common ports check
-        if (knownPorts.length === 0) {
-          for (const { port } of COMMON_PORTS) {
-            const open = await tcpCheck(targetHost, port);
-            if (open) { result.portsOpen.push(port); result.status = HEALTH_STATUS.ALIVE; result.checkMethod = `tcp:${port}`; break; }
-          }
         }
 
         // ICMP ping fallback

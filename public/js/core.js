@@ -310,7 +310,9 @@ const App = {
 
   closeDrawer() {
     const drawer = document.getElementById('drawer');
+    const overlay = document.getElementById('modal-overlay');
     drawer.classList.remove('open');
+    if (overlay) overlay.classList.add('hidden');
     setTimeout(() => { drawer.classList.add('hidden'); drawer.innerHTML = ''; }, 250);
   },
 

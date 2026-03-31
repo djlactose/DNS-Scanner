@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dns-scanner-v5';
+const CACHE_NAME = 'dns-scanner-v6';
 const STATIC_ASSETS = ['/', '/index.html', '/styles.css', '/manifest.json', '/js/core.js', '/js/auth.js', '/js/dashboard.js', '/js/domains.js', '/js/settings.js'];
 
 self.addEventListener('install', (event) => {
