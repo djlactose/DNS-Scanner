@@ -238,6 +238,56 @@ async function checkCertExpiry() {
   }
 }
 
+// ─── Cloudflare Tunnel status checks ───
+async function checkTunnelStatuses() {
+  const lockKey = 'tunnel_check';
+  if (!(await acquireLock(lockKey))) return;
+
+  try {
+    const enabled = (await getSetting('cloudflare_tunnel_check_enabled')) !== 'false';
+    if (!enabled) return;
+
+    const { checkTunnelHealth } = require('./cloudflare-tunnel');
+    const { deliverWebhook } = require('./notifier');
+
+    const tunnels = await query('SELECT * FROM cloudflare_tunnels');
+    if (!tunnels.rows.length) return;
+
+    for (const tunnel of tunnels.rows) {
+      const prevStatus = tunnel.status;
+      const result = await checkTunnelHealth(tunnel.tunnel_id);
+
+      // Fire webhook on status transitions
+      if (result.source === 'api' && prevStatus !== result.status && prevStatus !== 'unknown') {
+        const webhooks = await query('SELECT * FROM webhooks WHERE enabled = TRUE');
+        for (const webhook of webhooks.rows) {
+          let events;
+          try { events = typeof webhook.events === 'string' ? JSON.parse(webhook.events) : (webhook.events || []); } catch (e) { events = []; }
+          if (events.includes('tunnel.status_change')) {
+            await deliverWebhook(webhook, 'tunnel.status_change', {
+              tunnel_id: tunnel.tunnel_id,
+              tunnel_name: result.name || tunnel.tunnel_name,
+              previous_status: prevStatus,
+              current_status: result.status,
+            });
+          }
+        }
+        console.log(`[WORKER] Tunnel ${tunnel.tunnel_id} status changed: ${prevStatus} → ${result.status}`);
+      }
+    }
+
+    await query(
+      "INSERT INTO app_settings (key, value) VALUES ('worker_last_tunnel_check', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+      [new Date().toISOString()]
+    );
+    console.log(`[WORKER] Checked ${tunnels.rows.length} tunnel(s)`);
+  } catch (err) {
+    console.error('[WORKER] Tunnel check error:', err.message);
+  } finally {
+    await releaseLock(lockKey);
+  }
+}
+
 function startWorker() {
   console.log('[WORKER] Starting background worker...');
 
@@ -251,11 +301,14 @@ function startWorker() {
   setInterval(checkDomainExpiry, 12 * 60 * 60 * 1000);
   // Check certificate expiry every 12 hours
   setInterval(checkCertExpiry, 12 * 60 * 60 * 1000);
+  // Check Cloudflare Tunnel statuses every 5 minutes
+  setInterval(checkTunnelStatuses, 5 * 60 * 1000);
 
   // Run immediately on start
   setTimeout(checkScheduledScans, 10000);
   setTimeout(checkWhoisUpdates, 30000);
   setTimeout(checkCertExpiry, 45000);
+  setTimeout(checkTunnelStatuses, 20000);
 
   console.log('[WORKER] Background worker running');
 }

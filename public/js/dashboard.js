@@ -32,6 +32,9 @@ Object.assign(App, {
       // Worker health indicator
       html += `<div id="worker-health" style="margin-bottom:16px"></div>`;
 
+      // Cloudflare Tunnel health
+      html += `<div id="tunnel-health" style="margin-bottom:16px"></div>`;
+
       // IPv6 connectivity warning
       if (data.ipv6_available === false) {
         html += `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-left:4px solid var(--status-warning);margin-bottom:16px">
@@ -97,8 +100,9 @@ Object.assign(App, {
 
       el.innerHTML = html;
 
-      // Fetch worker health
+      // Fetch worker health and tunnel status
       this.loadWorkerHealth();
+      this.loadTunnelHealth();
     } catch (e) { this.toast(e.message, 'error'); }
   },
 
@@ -122,6 +126,34 @@ Object.assign(App, {
       </div>`;
     } catch (e) {
       // Worker status endpoint may not exist, silently ignore
+    }
+  },
+
+  async loadTunnelHealth() {
+    const container = document.getElementById('tunnel-health');
+    if (!container) return;
+    try {
+      const data = await this.api('/tunnels/summary');
+      if (!data || data.total === 0) return;
+      let color = 'var(--status-alive)';
+      let label = `${data.healthy} healthy`;
+      const parts = [];
+      if (data.healthy > 0) parts.push(`${data.healthy} healthy`);
+      if (data.degraded > 0) parts.push(`${data.degraded} degraded`);
+      if (data.down > 0) parts.push(`${data.down} down`);
+      if (data.unknown > 0) parts.push(`${data.unknown} unknown`);
+      if (data.down > 0) color = 'var(--status-dead)';
+      else if (data.degraded > 0) color = 'var(--status-warning, orange)';
+      else if (data.unknown > 0 && data.healthy === 0) color = 'var(--text-muted)';
+      container.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${color}"></div>
+        <div>
+          <div style="font-weight:600;font-size:14px">Cloudflare Tunnels (${data.total})</div>
+          <div style="font-size:12px;color:var(--text-muted)">${parts.join(', ')}</div>
+        </div>
+      </div>`;
+    } catch (e) {
+      // Tunnel endpoint may not exist yet, silently ignore
     }
   },
 

@@ -126,10 +126,34 @@ async function initSchema() {
         ssl_valid BOOLEAN,
         ssl_expires_at TIMESTAMPTZ,
         ssl_error TEXT,
-        propagation_results JSONB
+        propagation_results JSONB,
+        tunnel_status VARCHAR(30)
       )
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_health_checks_record ON health_checks(record_id, checked_at DESC)`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cloudflare_tunnels (
+        id SERIAL PRIMARY KEY,
+        tunnel_id VARCHAR(36) UNIQUE NOT NULL,
+        tunnel_name VARCHAR(255),
+        account_id VARCHAR(32),
+        status VARCHAR(30) DEFAULT 'unknown',
+        connections JSONB DEFAULT '[]',
+        last_checked_at TIMESTAMPTZ,
+        last_healthy_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS dns_record_tunnels (
+        record_id INTEGER REFERENCES dns_records(id) ON DELETE CASCADE,
+        tunnel_id INTEGER REFERENCES cloudflare_tunnels(id) ON DELETE CASCADE,
+        detected_method VARCHAR(20) DEFAULT 'auto',
+        PRIMARY KEY(record_id, tunnel_id)
+      )
+    `);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS scans (
@@ -371,6 +395,9 @@ async function initSchema() {
 
     // ─── Certificate expiry notification preference ───
     await client.query(`ALTER TABLE notification_settings ADD COLUMN IF NOT EXISTS notify_on_cert_expiry BOOLEAN DEFAULT TRUE`);
+
+    // ─── Cloudflare Tunnel health checking ───
+    await client.query(`ALTER TABLE health_checks ADD COLUMN IF NOT EXISTS tunnel_status VARCHAR(30)`);
 
     await client.query('COMMIT');
     console.log('[DB] Schema initialized');

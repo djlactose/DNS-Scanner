@@ -153,6 +153,7 @@ const WEBHOOK_EVENT_TYPES = [
   'scan.completed',
   'propagation.inconsistent',
   'dns.changed',
+  'tunnel.status_change',
 ];
 
 const EXPIRY_WARNING_DAYS = [90, 30, 14, 7];

@@ -13,6 +13,7 @@ const {
 } = require('./constants');
 const { getSetting } = require('./settings-service');
 const { fetchProviderRecords } = require('./dns-providers');
+const { detectTunnelFromCNAME, syncTunnelRecord, checkTunnelHealth } = require('./cloudflare-tunnel');
 
 // ─── Runtime settings (refreshed at the start of each scan) ───
 let _allowPrivateRanges = false;
@@ -517,11 +518,45 @@ async function healthCheckRecord(record, domain) {
 
   // Resolve CNAME target
   if (record.record_type === 'CNAME') {
+    // Detect Cloudflare Tunnel from CNAME value
+    const tunnelEnabled = (await getSetting('cloudflare_tunnel_check_enabled')) !== 'false';
+    if (tunnelEnabled) {
+      const tunnelUUID = detectTunnelFromCNAME(record.value);
+      if (tunnelUUID) {
+        await syncTunnelRecord(record.id, tunnelUUID);
+        const tunnelResult = await checkTunnelHealth(tunnelUUID);
+        result.tunnelStatus = tunnelResult.status;
+
+        if (tunnelResult.source === 'api') {
+          if (tunnelResult.status === 'down') {
+            result.status = HEALTH_STATUS.DEAD;
+            result.checkMethod = 'cf_tunnel_api';
+            result.errorMessage = `Cloudflare Tunnel ${tunnelUUID} is down`;
+            result.responseMs = Date.now() - startTime;
+            return result;
+          }
+          if (tunnelResult.status === 'healthy') {
+            result.status = HEALTH_STATUS.ALIVE;
+            result.checkMethod = 'cf_tunnel_api';
+            result.responseMs = Date.now() - startTime;
+            // Continue to collect SSL info via HTTP check below
+          }
+          // 'degraded' — continue to HTTP check for reachability detail
+        }
+        // API unavailable — fall through to normal HTTP/TCP/ICMP checks
+      }
+    }
+
     try {
       const addrs = await dns.promises.resolve4(record.value);
       if (addrs.length > 0) targetIP = addrs[0];
       targetHost = record.value;
     } catch (e) {
+      // If tunnel API already confirmed alive, don't fail on DNS resolution
+      if (result.status === HEALTH_STATUS.ALIVE) {
+        result.responseMs = Date.now() - startTime;
+        return result;
+      }
       result.status = HEALTH_STATUS.DEAD;
       result.errorMessage = `CNAME target ${record.value} does not resolve`;
       result.checkMethod = 'dns_resolve';
@@ -802,12 +837,13 @@ async function performScan(domain, scanId) {
 
         // Store health check
         await query(
-          `INSERT INTO health_checks (record_id, status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, propagation_results)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO health_checks (record_id, status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, propagation_results, tunnel_status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [record.id, healthResult.status, healthResult.statusCode, healthResult.responseMs,
            healthResult.errorMessage, healthResult.checkMethod, JSON.stringify(healthResult.portsOpen),
            healthResult.sslValid, healthResult.sslExpiresAt, healthResult.sslError,
-           propagationResults ? JSON.stringify(propagationResults) : null]
+           propagationResults ? JSON.stringify(propagationResults) : null,
+           healthResult.tunnelStatus || null]
         );
 
         // Store discovered ports from full port scan
@@ -869,11 +905,12 @@ async function portScanRecord(recordId) {
   }
   // Write a health_checks row so the UI reflects the new status
   await query(
-    `INSERT INTO health_checks (record_id, status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    `INSERT INTO health_checks (record_id, status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, tunnel_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [recordId, healthResult.status, healthResult.statusCode, healthResult.responseMs,
      healthResult.errorMessage, healthResult.checkMethod, JSON.stringify(healthResult.portsOpen),
-     healthResult.sslValid, healthResult.sslExpiresAt, healthResult.sslError]
+     healthResult.sslValid, healthResult.sslExpiresAt, healthResult.sslError,
+     healthResult.tunnelStatus || null]
   );
   return { portsOpen: healthResult.portsOpen, status: healthResult.status };
 }

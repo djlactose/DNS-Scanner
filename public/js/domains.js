@@ -20,14 +20,17 @@ Object.assign(App, {
       <div class="search-bar">
         <input id="domain-search" placeholder="Search domains..." oninput="App.filterDomains()">
         <select id="domain-filter" onchange="App.filterDomains()">
-          <option value="all">All</option><option value="dead">Has Dead Records</option><option value="healthy">Healthy</option><option value="disabled">Disabled</option>
+          <option value="all">All Status</option><option value="dead">Has Dead Records</option><option value="healthy">Healthy</option><option value="disabled">Disabled</option>
         </select>
         <select id="domain-tag-filter" onchange="App.filterDomains()">
           <option value="">All Tags</option>
         </select>
         ${isAdmin ? '<button class="btn-secondary" onclick="App.showImport()">Import CSV</button>' : ''}
-        ${isAdmin ? `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="select-all-toggle" onclick="App.toggleSelectAll()"> Select All</label>` : ''}
       </div>
+      ${isAdmin ? `<div class="domain-list-header">
+        <label class="select-all-label"><input type="checkbox" id="select-all-toggle" onclick="App.toggleSelectAll()"> Select All</label>
+        <span class="sort-hint">Sorted by: issues first</span>
+      </div>` : `<div class="domain-list-header"><span class="sort-hint">Sorted by: issues first</span></div>`}
       <div id="domain-list"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>
       ${isAdmin ? `<div id="bulk-bar" class="bulk-bar" style="display:none">
         <span id="bulk-count">0 selected</span>
@@ -97,16 +100,24 @@ Object.assign(App, {
       const dotClass = this.scanningDomains.has(d.id) ? 'scanning' : deadCount > 0 ? 'dead' : 'alive';
       const tags = (typeof d.tags === 'string' ? JSON.parse(d.tags) : d.tags) || [];
       const tagHtml = tags.filter(t => t && t.name).map(t => `<span class="tag" style="background:${this.esc(t.color)}">${this.esc(t.name)}</span>`).join('');
-      return `<div class="domain-card card" data-id="${d.id}" onclick="App.navigate('domains/${d.id}')">
-        ${isAdmin ? `<input type="checkbox" class="domain-check" data-id="${d.id}" onclick="event.stopPropagation(); App.updateBulkBar()" ${this.selectedDomains.has(d.id) ? 'checked' : ''}>` : ''}
-        <div class="domain-dot ${dotClass}"></div>
-        <div class="domain-info">
-          <div class="domain-name">${this.esc(d.display_name || d.domain)} ${tagHtml}</div>
-          <div class="domain-meta">${this.esc(d.domain)} &middot; ${d.record_count || 0} records &middot; ${deadCount > 0 ? `<span style="color:var(--status-dead)">${deadCount} dead</span>` : '0 dead'} &middot; Last scan: ${this.timeAgo(d.last_scan)}</div>
-        </div>
-        <div class="domain-actions" onclick="event.stopPropagation()">
-          <button class="btn-sm btn-secondary" onclick="App.scanDomain(${d.id})" ${this.scanningDomains.has(d.id) ? 'disabled' : ''}>${this.scanningDomains.has(d.id) ? 'Scanning...' : 'Scan Now'}</button>
-          ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)">&#10005;</button>` : ''}
+      const cardStateClass = this.scanningDomains.has(d.id) ? 'state-scanning' : deadCount > 0 ? 'state-dead' : '';
+      return `<div class="domain-card card ${cardStateClass}" data-id="${d.id}" onclick="App.navigate('domains/${d.id}')">
+        <div class="domain-card-row">
+          ${isAdmin ? `<input type="checkbox" class="domain-check" data-id="${d.id}" onclick="event.stopPropagation(); App.updateBulkBar()" ${this.selectedDomains.has(d.id) ? 'checked' : ''}>` : ''}
+          <div class="domain-dot ${dotClass}"></div>
+          <div class="domain-info">
+            <div class="domain-name">${this.esc(d.display_name || d.domain)} ${tagHtml}</div>
+            <div class="domain-meta">
+              <span class="meta-item">${this.esc(d.domain)}</span>
+              <span class="meta-item">${d.record_count || 0} records</span>
+              <span class="meta-item">${deadCount > 0 ? `<span style="color:var(--status-dead)">${deadCount} dead</span>` : '0 dead'}</span>
+              <span class="meta-item">Last scan: ${this.timeAgo(d.last_scan)}</span>
+            </div>
+          </div>
+          <div class="domain-actions" onclick="event.stopPropagation()">
+            <button class="btn-sm btn-secondary" onclick="App.scanDomain(${d.id})" ${this.scanningDomains.has(d.id) ? 'disabled' : ''}>${this.scanningDomains.has(d.id) ? 'Scanning...' : 'Scan Now'}</button>
+            ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})" title="Edit domain">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)" title="Delete domain">&#10005;</button>` : ''}
+          </div>
         </div>
         ${this.scanningDomains.has(d.id) ? `<div class="scan-progress" data-domain-id="${d.id}"><div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Starting scan...</div></div>` : ''}
       </div>`;
@@ -415,6 +426,8 @@ Object.assign(App, {
       const portsOpen = h.ports_open || [];
       const portsStr = portsOpen.length > 0 ? `Ports: ${portsOpen.join(', ')}` : '';
       const sslStr = h.ssl_valid === true ? `SSL: Valid` : h.ssl_valid === false ? `SSL: Invalid` : '';
+      const tunnelStr = r.tunnel_uuid ? `CF Tunnel: ${r.tunnel_status || 'unknown'}${r.tunnel_name ? ` (${this.esc(r.tunnel_name)})` : ''}` : '';
+      const tunnelColor = r.tunnel_status === 'healthy' ? '#22c55e' : r.tunnel_status === 'degraded' ? '#f59e0b' : r.tunnel_status === 'down' ? '#ef4444' : 'var(--text-muted)';
 
       return `<tr class="${rowClass}" onclick="App.showRecordDetail(${r.id})">
         <td><strong>${this.esc(r.record_type)}</strong></td>
@@ -422,6 +435,7 @@ Object.assign(App, {
         <td><div class="value-text">${this.esc(r.value)}</div>
           ${portsStr ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${portsStr}</div>` : ''}
           ${sslStr ? `<div style="font-size:12px;color:var(--text-muted)">${sslStr}${h.ssl_expires_at ? ` (exp ${new Date(h.ssl_expires_at).toLocaleDateString()})` : ''}</div>` : ''}
+          ${tunnelStr ? `<div style="font-size:12px;color:${tunnelColor};margin-top:2px">${tunnelStr}</div>` : ''}
         </td>
         <td><span class="status-badge ${status}">${isNew && status !== 'dead' ? 'NEW' : status.replace('_', ' ')}</span></td>
         <td>${h.response_ms ? `<span class="response-time">${h.response_ms}ms</span>` : '-'}</td>
@@ -555,6 +569,22 @@ Object.assign(App, {
     }
   },
 
+  async checkTunnel(tunnelUuid, recordId) {
+    try {
+      this.toast('Checking tunnel status...', 'info');
+      const result = await this.api(`/tunnels/${tunnelUuid}/check`, { method: 'POST' });
+      this.toast(`Tunnel status: ${result.status} (via ${result.source})`, result.status === 'healthy' ? 'success' : result.status === 'down' ? 'error' : 'info');
+      const domainId = this._currentDomain?.id;
+      if (domainId) {
+        this._currentRecords = await this.api(`/domains/${domainId}/records`);
+        this.renderRecordsTable();
+      }
+      if (recordId) this.showRecordDetail(recordId);
+    } catch (e) {
+      this.toast(`Tunnel check failed: ${e.message}`, 'error');
+    }
+  },
+
   async showRecordDetail(recordId) {
     const record = this._currentRecords?.find(r => r.id === recordId);
     if (!record) return;
@@ -623,6 +653,18 @@ Object.assign(App, {
         <div class="drawer-row"><span class="label">Valid</span><span style="color:${h.ssl_valid ? 'var(--status-alive)' : 'var(--status-dead)'}">${h.ssl_valid ? 'Yes' : 'No'}</span></div>
         ${h.ssl_expires_at ? `<div class="drawer-row"><span class="label">Expires</span><span>${new Date(h.ssl_expires_at).toLocaleDateString()}</span></div>` : ''}
         ${h.ssl_error ? `<div class="drawer-row"><span class="label">Error</span><span>${this.esc(h.ssl_error)}</span></div>` : ''}
+      </div>`;
+    }
+
+    // Cloudflare Tunnel
+    if (record.tunnel_uuid) {
+      const tColor = record.tunnel_status === 'healthy' ? 'var(--status-alive)' : record.tunnel_status === 'degraded' ? 'var(--status-warning)' : record.tunnel_status === 'down' ? 'var(--status-dead)' : 'var(--text-muted)';
+      drawerHtml += `<div class="drawer-section"><h4>Cloudflare Tunnel</h4>
+        <div class="drawer-row"><span class="label">Tunnel ID</span><span class="value-text" style="font-size:12px">${this.esc(record.tunnel_uuid)}</span></div>
+        ${record.tunnel_name ? `<div class="drawer-row"><span class="label">Name</span><span>${this.esc(record.tunnel_name)}</span></div>` : ''}
+        <div class="drawer-row"><span class="label">Status</span><span style="color:${tColor};font-weight:600">${(record.tunnel_status || 'unknown')}</span></div>
+        ${h.tunnel_status && h.tunnel_status !== record.tunnel_status ? `<div class="drawer-row"><span class="label">Last Check</span><span>${h.tunnel_status}</span></div>` : ''}
+        <button class="btn-sm btn-secondary" style="margin-top:8px" onclick="App.checkTunnel('${this.esc(record.tunnel_uuid)}', ${record.id})">Check Tunnel Now</button>
       </div>`;
     }
 

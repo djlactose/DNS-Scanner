@@ -298,10 +298,13 @@ router.get('/domains/:id/records', requireAuth, validateId, async (req, res) => 
     let sql = `
       SELECT dr.*,
         (SELECT row_to_json(hc) FROM (
-          SELECT status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, propagation_results, checked_at
+          SELECT status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, propagation_results, tunnel_status, checked_at
           FROM health_checks WHERE record_id = dr.id ORDER BY checked_at DESC LIMIT 1
         ) hc) as latest_health,
-        (SELECT COUNT(*) FROM health_checks WHERE record_id = dr.id AND status = 'dead') as consecutive_failures
+        (SELECT COUNT(*) FROM health_checks WHERE record_id = dr.id AND status = 'dead') as consecutive_failures,
+        (SELECT ct.tunnel_id FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) as tunnel_uuid,
+        (SELECT ct.status FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) as tunnel_status,
+        (SELECT ct.tunnel_name FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) as tunnel_name
       FROM dns_records dr
       WHERE dr.domain_id = $1 AND dr.removed_at IS NULL
     `;
@@ -495,6 +498,30 @@ router.get('/domains/:id/whois', requireAuth, validateId, async (req, res) => {
     const result = await query('SELECT dw.*, d.domain FROM domain_whois dw JOIN domains d ON d.id = dw.domain_id WHERE dw.domain_id = $1', [req.params.id]);
     res.json(result.rows[0] || null);
   } catch (err) { res.status(500).json({ error: 'Failed to fetch whois data' }); }
+});
+
+// ─── Cloudflare Tunnels ───
+const { getTunnelsForDomain, getTunnelSummary, checkTunnelHealth } = require('../cloudflare-tunnel');
+
+router.get('/domains/:id/tunnels', requireAuth, validateId, async (req, res) => {
+  try {
+    const tunnels = await getTunnelsForDomain(req.params.id);
+    res.json(tunnels);
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch tunnel data' }); }
+});
+
+router.get('/tunnels/summary', requireAuth, async (req, res) => {
+  try {
+    const summary = await getTunnelSummary();
+    res.json(summary);
+  } catch (err) { res.status(500).json({ error: 'Failed to fetch tunnel summary' }); }
+});
+
+router.post('/tunnels/:tunnelId/check', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await checkTunnelHealth(req.params.tunnelId);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: 'Failed to check tunnel' }); }
 });
 
 module.exports = router;

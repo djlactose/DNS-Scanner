@@ -166,19 +166,44 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .alert-card .alert-actions { display: flex; gap: 8px; margin-top: 8px; }
 
 /* Domain list */
+.domain-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.sort-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
 .domain-card {
   padding: 16px;
   margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color .15s, border-left-color .15s;
+  border-left: 3px solid transparent;
+}
+.domain-card:hover { border-color: var(--accent); }
+.domain-card.state-dead { border-left-color: var(--status-dead); }
+.domain-card.state-scanning { border-left-color: var(--status-scanning); background: rgba(59,130,246,.03); }
+.domain-card-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  cursor: pointer;
-  transition: border-color .15s;
 }
-.domain-card:hover { border-color: var(--accent); }
 .domain-dot {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -188,7 +213,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .domain-dot.scanning { background: var(--status-scanning); animation: pulse 1.5s infinite; }
 .domain-info { flex: 1; min-width: 0; }
 .domain-name { font-weight: 600; font-size: 15px; }
-.domain-meta { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.domain-meta { font-size: 13px; color: var(--text-secondary); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.meta-item { white-space: nowrap; }
+.meta-item:not(:last-child)::after { content: "\00b7"; margin-left: 4px; color: var(--text-muted); }
 .domain-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
 /* Tags */
