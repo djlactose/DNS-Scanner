@@ -518,33 +518,37 @@ async function healthCheckRecord(record, domain) {
 
   // Resolve CNAME target
   if (record.record_type === 'CNAME') {
-    // Detect Cloudflare Tunnel from CNAME value
     const tunnelEnabled = (await getSetting('cloudflare_tunnel_check_enabled')) !== 'false';
-    if (tunnelEnabled) {
-      const tunnelUUID = detectTunnelFromCNAME(record.value);
-      if (tunnelUUID) {
-        await syncTunnelRecord(record.id, tunnelUUID);
-        const tunnelResult = await checkTunnelHealth(tunnelUUID);
-        result.tunnelStatus = tunnelResult.status;
+    const tunnelUUID = tunnelEnabled ? detectTunnelFromCNAME(record.value) : null;
 
-        if (tunnelResult.source === 'api') {
-          if (tunnelResult.status === 'down') {
-            result.status = HEALTH_STATUS.DEAD;
-            result.checkMethod = 'cf_tunnel_api';
-            result.errorMessage = `Cloudflare Tunnel ${tunnelUUID} is down`;
-            result.responseMs = Date.now() - startTime;
-            return result;
-          }
-          if (tunnelResult.status === 'healthy') {
-            result.status = HEALTH_STATUS.ALIVE;
-            result.checkMethod = 'cf_tunnel_api';
-            result.responseMs = Date.now() - startTime;
-            // Continue to collect SSL info via HTTP check below
-          }
-          // 'degraded' — continue to HTTP check for reachability detail
+    if (tunnelUUID) {
+      // Tunnel CNAMEs: CF API is authoritative for up/down. The cfargotunnel
+      // hostname is a routing directive, not a testable endpoint, and an HTTPS
+      // probe on the user-facing hostname would register Cloudflare's Error 1033
+      // page as alive when the tunnel is actually down.
+      await syncTunnelRecord(record.id, tunnelUUID);
+      const tunnelResult = await checkTunnelHealth(tunnelUUID);
+      result.tunnelStatus = tunnelResult.status;
+
+      if (tunnelResult.source === 'api') {
+        if (tunnelResult.status === 'down') {
+          result.status = HEALTH_STATUS.DEAD;
+          result.checkMethod = 'cf_tunnel_api';
+          result.errorMessage = `Cloudflare Tunnel ${tunnelUUID} is down`;
+        } else {
+          result.status = HEALTH_STATUS.ALIVE;
+          result.checkMethod = 'cf_tunnel_api';
+          const ssl = await getSSLInfo(targetHost);
+          if (ssl) { result.sslValid = ssl.valid; result.sslExpiresAt = ssl.expires; result.sslError = ssl.error; }
         }
-        // API unavailable — fall through to normal HTTP/TCP/ICMP checks
+      } else {
+        result.status = HEALTH_STATUS.SKIPPED;
+        result.checkMethod = 'cf_tunnel_api_unavailable';
+        result.errorMessage = `Cloudflare Tunnel API unavailable (${tunnelResult.reason || 'unknown'}) — cannot verify tunnel ${tunnelUUID}`;
       }
+
+      result.responseMs = Date.now() - startTime;
+      return result;
     }
 
     try {
@@ -552,11 +556,6 @@ async function healthCheckRecord(record, domain) {
       if (addrs.length > 0) targetIP = addrs[0];
       targetHost = record.value;
     } catch (e) {
-      // If tunnel API already confirmed alive, don't fail on DNS resolution
-      if (result.status === HEALTH_STATUS.ALIVE) {
-        result.responseMs = Date.now() - startTime;
-        return result;
-      }
       result.status = HEALTH_STATUS.DEAD;
       result.errorMessage = `CNAME target ${record.value} does not resolve`;
       result.checkMethod = 'dns_resolve';
