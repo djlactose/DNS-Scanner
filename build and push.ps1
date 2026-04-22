@@ -13,6 +13,9 @@ if ($existing -notcontains $builderName) {
     docker buildx use $builderName | Out-Null
 }
 
+# Capture the commit so the running container can report its revision.
+$gitCommit = (git rev-parse HEAD).Trim()
+
 # Build, attest, and push in one shot. SBOM + provenance attestations are
 # what Docker Scout reads to grade supply-chain posture — without these the
 # image cannot earn the top rating.
@@ -20,6 +23,7 @@ docker buildx build `
     --platform $platforms `
     --sbom=true `
     --provenance=mode=max `
+    --build-arg "GIT_COMMIT=$gitCommit" `
     --tag "$($image):latest" `
     --push `
     .

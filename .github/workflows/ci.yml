@@ -72,6 +72,8 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
           sbom: true
           provenance: mode=max
           cache-from: type=gha

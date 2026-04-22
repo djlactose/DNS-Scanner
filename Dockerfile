@@ -18,6 +18,11 @@ RUN apk add --no-cache --virtual .build-deps python3 make g++ \
 # ─── Stage 2: runtime ───
 FROM ${NODE_IMAGE} AS runtime
 
+# Commit SHA baked in at build time so the running container can report which
+# revision it's on (surfaced via /api/version and shown in the UI footer).
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # Runtime-only tools: dig/whois for record queries, ping for ICMP health checks.
 # Strip the bundled npm/corepack from the node image — they drag in transitive
 # packages (picomatch, fdir, tinyglobby, …) that Scout flags as CVEs even
@@ -55,6 +60,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
 LABEL org.opencontainers.image.title="DNS Scanner" \
       org.opencontainers.image.description="PWA that monitors DNS records and detects dead endpoints" \
       org.opencontainers.image.source="https://github.com/djlactose/dnsscaner" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.base.name="docker.io/library/node:22-alpine"
 

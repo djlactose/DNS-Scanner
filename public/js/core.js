@@ -47,6 +47,14 @@ const App = {
     this.initTheme();
     window.addEventListener('hashchange', () => this.route());
     try {
+      const v = await this.api('/version');
+      this.gitCommit = v.commit;
+      this.gitCommitShort = v.commitShort;
+    } catch (e) {
+      this.gitCommit = 'unknown';
+      this.gitCommitShort = 'unknown';
+    }
+    try {
       this.user = await this.api('/auth/me');
       this.connectSSE();
     } catch (e) {
@@ -215,6 +223,11 @@ const App = {
                 Coffee
               </a>
             </div>
+            ${this.gitCommitShort && this.gitCommitShort !== 'unknown'
+              ? `<div style="margin-top:6px;font-size:0.75em;opacity:0.6;font-family:monospace">
+                   <a href="https://github.com/djlactose/DNS-Scanner/commit/${this.esc(this.gitCommit)}" target="_blank" rel="noopener noreferrer" title="Running commit ${this.esc(this.gitCommit)}">${this.esc(this.gitCommitShort)}</a>
+                 </div>`
+              : `<div style="margin-top:6px;font-size:0.75em;opacity:0.6;font-family:monospace" title="Commit SHA not baked into this image">dev</div>`}
           </div>
         </aside>
         <main class="main-content">

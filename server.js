@@ -104,6 +104,15 @@ function setupSession() {
   });
 }
 
+// ─── Version endpoint (commit SHA baked in at Docker build time) ───
+const GIT_COMMIT = process.env.GIT_COMMIT || 'unknown';
+app.get('/api/version', (req, res) => {
+  res.json({
+    commit: GIT_COMMIT,
+    commitShort: GIT_COMMIT === 'unknown' ? 'unknown' : GIT_COMMIT.slice(0, 7),
+  });
+});
+
 // ─── Health endpoint (with DB check) ───
 app.get('/health', async (req, res) => {
   const start = Date.now();
