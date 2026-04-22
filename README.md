@@ -20,6 +20,7 @@ A containerized Progressive Web App (PWA) that monitors DNS records across multi
 - **Manual Port Rescan** - Trigger a full port rescan on any individual record on demand
 - **Dead Record Detection** - Records marked dead after 3 consecutive failed checks across scans
 - **Subdomain Takeover Detection** - Dangling CNAME detection for AWS S3, GitHub Pages, Heroku, Azure, Netlify, CloudFront, Fastly, Shopify, and 20+ cloud services
+- **Cloudflare Tunnel Health** - Auto-detects CNAMEs pointing to `*.cfargotunnel.com` and reports tunnel status (healthy/degraded/down) from the Cloudflare API
 - **DNS Propagation Monitoring** - Compare results across Google, Cloudflare, Quad9, and OpenDNS resolvers
 - **Domain Expiry Monitoring** - WHOIS-based expiry tracking with 90/30/14/7 day warnings
 - **DNS Change Detection** - Track when record values change between scans
@@ -190,6 +191,23 @@ Configure API credentials in System Settings to fetch complete zone records dire
 | **GoDaddy** | API Key + API Secret | Domain read access |
 
 When configured, provider APIs are queried first during scans, providing complete and authoritative zone data before falling back to DNS enumeration techniques.
+
+### Cloudflare Tunnel Monitoring
+
+The scanner automatically detects CNAME records pointing to `{uuid}.cfargotunnel.com` and reports tunnel health from the Cloudflare API. This is **separate** from the DNS zone integration above and requires an account-scoped permission.
+
+| Setting | Value |
+| --- | --- |
+| `cloudflare_api_token` | API token with **Account · Cloudflare Tunnel · Read** |
+| `cloudflare_account_id` | 32-char account ID that owns the tunnels (shown in the Cloudflare dashboard sidebar of any zone's overview page) |
+| `cloudflare_tunnel_check_enabled` | `true` (default) |
+
+Create the token at <https://dash.cloudflare.com/profile/api-tokens> → Create Token → Custom token, then add the permission:
+
+- **Account** · **Cloudflare Tunnel** · **Read**
+- Account Resources: *Include → Specific account →* the account that owns the tunnels.
+
+You can reuse the same token for zone reads by adding **Zone · Zone · Read** and **Zone · DNS · Read** to it. If tunnel records show SKIPPED with "Cloudflare Tunnel API unavailable" or the scanner logs `[TUNNEL] API error: Authentication error`, the token is missing the Tunnel:Read scope or the account ID doesn't match the token's account.
 
 ## API
 
