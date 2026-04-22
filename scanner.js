@@ -566,8 +566,8 @@ async function healthCheckRecord(record, domain) {
         }
       } else {
         result.status = HEALTH_STATUS.SKIPPED;
-        result.checkMethod = 'cf_tunnel_api_unavailable';
-        result.errorMessage = `Cloudflare Tunnel API unavailable (${tunnelResult.reason || 'unknown'}) — cannot verify tunnel ${tunnelUUID}`;
+        result.checkMethod = 'cf_tunnel_no_api';
+        result.errorMessage = `Cloudflare Tunnel API unavailable (${tunnelResult.reason || 'unknown'}${tunnelResult.error ? `: ${tunnelResult.error}` : ''}) — cannot verify tunnel ${tunnelUUID}`;
       }
 
       result.responseMs = Date.now() - startTime;
