@@ -526,7 +526,7 @@ async function healthCheckRecord(record, domain) {
   if (record.record_type !== 'SRV' && record.name) {
     const labels = String(record.name).split('.');
     if (labels.some(label => label.startsWith('_'))) {
-      result.checkMethod = 'skipped_underscore_label';
+      result.checkMethod = 'skipped_underscore';
       return result;
     }
   }
