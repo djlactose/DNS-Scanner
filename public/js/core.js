@@ -222,12 +222,10 @@ const App = {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.216 6.415l-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 00-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 00-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 01-1.157-.107c-.086-.01-.18-.025-.258-.036-.243-.036-.484-.08-.724-.13-.111-.027-.111-.185 0-.212h.005c.277-.06.557-.108.838-.147h.002c.131-.009.263-.032.394-.048a25.076 25.076 0 013.426-.12c.674.019 1.347.062 2.014.13l.04.005c.23.029.46.06.692.095.088.013.176.03.265.042.087.013.184.028.282.038.246.028.42-.121.46-.349.044-.245-.1-.469-.348-.507l-.145-.024a24.968 24.968 0 00-4.381-.378c-1.026.015-2.057.09-3.07.283-.14.027-.282.056-.422.089-.135.032-.281.07-.424.113-.279.085-.558.205-.793.397-.293.239-.483.605-.492.997-.015.627.37 1.237.916 1.492.312.147.658.2 1 .213.392.015.784-.003 1.175-.038.812-.074 1.62-.194 2.416-.381a21.5 21.5 0 001.29-.346c.164-.05.318-.133.457-.236.28-.21.423-.554.323-.889l.001.002zM7.5 12.5c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1zm9 0c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1zM12 17c-1.105 0-2-.672-2-1.5S10.895 14 12 14s2 .672 2 1.5S13.105 17 12 17z"/><path d="M20 10H4a1 1 0 00-1 1v1c0 4.97 3.582 9.128 8.5 9.876V24h1v-2.124C17.418 21.128 21 16.97 21 12v-1a1 1 0 00-1-1zm-1 2c0 3.86-3.14 7-7 7s-7-3.14-7-7v0h14z"/></svg>
                 Coffee
               </a>
+              ${this.gitCommitShort && this.gitCommitShort !== 'unknown'
+                ? `<a href="https://github.com/djlactose/DNS-Scanner/commit/${this.esc(this.gitCommit)}" target="_blank" rel="noopener noreferrer" title="Running commit ${this.esc(this.gitCommit)}" style="font-family:monospace;font-size:0.85em;opacity:0.7;margin-left:auto">${this.esc(this.gitCommitShort)}</a>`
+                : `<span title="Commit SHA not baked into this image" style="font-family:monospace;font-size:0.85em;opacity:0.7;margin-left:auto">dev</span>`}
             </div>
-            ${this.gitCommitShort && this.gitCommitShort !== 'unknown'
-              ? `<div style="margin-top:6px;font-size:0.75em;opacity:0.6;font-family:monospace">
-                   <a href="https://github.com/djlactose/DNS-Scanner/commit/${this.esc(this.gitCommit)}" target="_blank" rel="noopener noreferrer" title="Running commit ${this.esc(this.gitCommit)}">${this.esc(this.gitCommitShort)}</a>
-                 </div>`
-              : `<div style="margin-top:6px;font-size:0.75em;opacity:0.6;font-family:monospace" title="Commit SHA not baked into this image">dev</div>`}
           </div>
         </aside>
         <main class="main-content">
