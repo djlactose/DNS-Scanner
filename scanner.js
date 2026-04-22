@@ -520,6 +520,17 @@ async function healthCheckRecord(record, domain) {
     sslError: null,
   };
 
+  // Underscore-prefixed labels (RFC 8552) name DNS attributes, not reachable
+  // endpoints — DKIM selectors, _acme-challenge, _amazonses, _mta-sts, etc.
+  // SRV is exempt because its handler reaches host:port parsed from the value.
+  if (record.record_type !== 'SRV' && record.name) {
+    const labels = String(record.name).split('.');
+    if (labels.some(label => label.startsWith('_'))) {
+      result.checkMethod = 'skipped_underscore_label';
+      return result;
+    }
+  }
+
   if (SKIPPED_RECORD_TYPES.includes(record.record_type)) {
     result.checkMethod = 'skipped';
     return result;
