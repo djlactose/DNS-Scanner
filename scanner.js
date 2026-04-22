@@ -545,9 +545,13 @@ async function healthCheckRecord(record, domain) {
     let tunnelUUID = tunnelEnabled ? detectTunnelFromCNAME(record.value) : null;
 
     if (!tunnelUUID) {
+      // Use dns.lookup (getaddrinfo) over dns.resolve4 (c-ares). Inside
+      // containers, c-ares tends to throw on CNAME chains whose intermediate
+      // hops the embedded resolver doesn't serve, even when the OS resolver
+      // (what dig and the browser use) resolves the name cleanly.
       try {
-        const addrs = await dns.promises.resolve4(record.value);
-        if (addrs.length > 0) targetIP = addrs[0];
+        const { address } = await dns.promises.lookup(record.value, { family: 4 });
+        targetIP = address;
         targetHost = record.value;
       } catch (e) {
         // Resolution failed — the chain may walk through intermediate CNAMEs
@@ -555,7 +559,7 @@ async function healthCheckRecord(record, domain) {
         if (tunnelEnabled) tunnelUUID = await detectTunnelInChain(record.value);
         if (!tunnelUUID) {
           result.status = HEALTH_STATUS.DEAD;
-          result.errorMessage = `CNAME target ${record.value} does not resolve`;
+          result.errorMessage = `CNAME target ${record.value} does not resolve (${e.code || e.message})`;
           result.checkMethod = 'dns_resolve';
           result.responseMs = Date.now() - startTime;
           return result;
