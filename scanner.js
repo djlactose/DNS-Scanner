@@ -505,7 +505,25 @@ async function fullPortScan(host, timeoutMs = 3000) {
   return openPorts;
 }
 
-async function healthCheckRecord(record, domain) {
+// Walk a CNAME chain through records the DNS provider gave us authoritatively
+// this scan, stopping at an A/AAAA record. Returns { ip, type } or null. Used
+// as a fallback when the container's resolver returns NXDOMAIN for a name
+// that the provider API confirmed exists.
+function resolveInZone(hostname, recordsByName, depth = 0) {
+  if (depth > 5 || !recordsByName) return null;
+  const key = String(hostname).toLowerCase().replace(/\.$/, '');
+  const record = recordsByName.get(key);
+  if (!record) return null;
+  if (record.record_type === 'A' || record.record_type === 'AAAA') {
+    return { ip: record.value, type: record.record_type };
+  }
+  if (record.record_type === 'CNAME') {
+    return resolveInZone(record.value, recordsByName, depth + 1);
+  }
+  return null;
+}
+
+async function healthCheckRecord(record, domain, recordsByName = null) {
   const startTime = Date.now();
   const needsPortScan = !record.last_port_scan || record._forcePortScan;
   const result = {
@@ -558,11 +576,21 @@ async function healthCheckRecord(record, domain) {
         // before ending at a tunnel (e.g. remote -> dev -> {uuid}.cfargotunnel).
         if (tunnelEnabled) tunnelUUID = await detectTunnelInChain(record.value);
         if (!tunnelUUID) {
-          result.status = HEALTH_STATUS.DEAD;
-          result.errorMessage = `CNAME target ${record.value} does not resolve (${e.code || e.message})`;
-          result.checkMethod = 'dns_resolve';
-          result.responseMs = Date.now() - startTime;
-          return result;
+          // Fall back to the provider's authoritative record set. Covers the
+          // case where the container's resolver NXDOMAINs a name the zone
+          // API confirmed exists (corporate DNS, split-horizon, stale caches).
+          const zoneTarget = resolveInZone(record.value, recordsByName);
+          if (zoneTarget) {
+            targetIP = zoneTarget.ip;
+            targetHost = record.value;
+            console.log(`[SCANNER] Using in-zone record for ${record.value} -> ${zoneTarget.ip} (container DNS returned ${e.code || 'error'})`);
+          } else {
+            result.status = HEALTH_STATUS.DEAD;
+            result.errorMessage = `CNAME target ${record.value} does not resolve (${e.code || e.message})`;
+            result.checkMethod = 'dns_resolve';
+            result.responseMs = Date.now() - startTime;
+            return result;
+          }
         }
       }
     }
@@ -847,10 +875,18 @@ async function performScan(domain, scanId) {
     const totalToCheck = recordsToCheck.length;
     broadcastSSE({ type: 'scan_progress', domainId: domain.id, scanId, phase: 'enumerating', checked: 0, total: totalToCheck });
 
+    // Lookup map so CNAME health checks can resolve targets against the
+    // provider's authoritative records when the container's DNS can't.
+    const recordsByName = new Map();
+    for (const r of recordsToCheck) {
+      const fullName = r.name === '@' ? domain.domain : `${r.name}.${domain.domain}`;
+      recordsByName.set(fullName.toLowerCase(), r);
+    }
+
     const checkPromises = recordsToCheck.map(async (record) => {
       await scanSemaphore.acquire();
       try {
-        const healthResult = await healthCheckRecord(record, domain.domain);
+        const healthResult = await healthCheckRecord(record, domain.domain, recordsByName);
 
         // Takeover check for CNAME records
         if (record.record_type === 'CNAME') {
