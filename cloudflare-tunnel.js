@@ -1,5 +1,6 @@
 'use strict';
 
+const dns = require('node:dns');
 const { query } = require('./db');
 const { getSetting } = require('./settings-service');
 
@@ -13,6 +14,31 @@ function detectTunnelFromCNAME(value) {
   if (!value) return null;
   const match = value.match(TUNNEL_UUID_RE);
   return match ? match[1].toLowerCase() : null;
+}
+
+/**
+ * Walk a CNAME chain looking for a cfargotunnel.com hostname. Returns the
+ * tunnel UUID if found, else null. Used when a record's direct value isn't
+ * a tunnel but it CNAMEs through another record that ultimately points at
+ * one (e.g. remote.example.com -> dev.example.com -> {uuid}.cfargotunnel.com).
+ */
+async function detectTunnelInChain(hostname, maxDepth = 5) {
+  let current = hostname;
+  const seen = new Set();
+  for (let i = 0; i < maxDepth; i++) {
+    if (seen.has(current)) return null;
+    seen.add(current);
+    const uuid = detectTunnelFromCNAME(current);
+    if (uuid) return uuid;
+    try {
+      const cnames = await dns.promises.resolveCname(current);
+      if (!cnames.length) return null;
+      current = cnames[0];
+    } catch (e) {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -153,6 +179,7 @@ async function getTunnelsForDomain(domainId) {
 
 module.exports = {
   detectTunnelFromCNAME,
+  detectTunnelInChain,
   fetchTunnelStatus,
   syncTunnelRecord,
   checkTunnelHealth,

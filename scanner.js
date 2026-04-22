@@ -14,7 +14,7 @@ const {
 } = require('./constants');
 const { getSetting } = require('./settings-service');
 const { fetchProviderRecords } = require('./dns-providers');
-const { detectTunnelFromCNAME, syncTunnelRecord, checkTunnelHealth } = require('./cloudflare-tunnel');
+const { detectTunnelFromCNAME, detectTunnelInChain, syncTunnelRecord, checkTunnelHealth } = require('./cloudflare-tunnel');
 
 // ─── Runtime settings (refreshed at the start of each scan) ───
 let _allowPrivateRanges = false;
@@ -542,7 +542,26 @@ async function healthCheckRecord(record, domain) {
   // Resolve CNAME target
   if (record.record_type === 'CNAME') {
     const tunnelEnabled = (await getSetting('cloudflare_tunnel_check_enabled')) !== 'false';
-    const tunnelUUID = tunnelEnabled ? detectTunnelFromCNAME(record.value) : null;
+    let tunnelUUID = tunnelEnabled ? detectTunnelFromCNAME(record.value) : null;
+
+    if (!tunnelUUID) {
+      try {
+        const addrs = await dns.promises.resolve4(record.value);
+        if (addrs.length > 0) targetIP = addrs[0];
+        targetHost = record.value;
+      } catch (e) {
+        // Resolution failed — the chain may walk through intermediate CNAMEs
+        // before ending at a tunnel (e.g. remote -> dev -> {uuid}.cfargotunnel).
+        if (tunnelEnabled) tunnelUUID = await detectTunnelInChain(record.value);
+        if (!tunnelUUID) {
+          result.status = HEALTH_STATUS.DEAD;
+          result.errorMessage = `CNAME target ${record.value} does not resolve`;
+          result.checkMethod = 'dns_resolve';
+          result.responseMs = Date.now() - startTime;
+          return result;
+        }
+      }
+    }
 
     if (tunnelUUID) {
       // Tunnel CNAMEs: CF API is authoritative for up/down. The cfargotunnel
@@ -570,18 +589,6 @@ async function healthCheckRecord(record, domain) {
         result.errorMessage = `Cloudflare Tunnel API unavailable (${tunnelResult.reason || 'unknown'}${tunnelResult.error ? `: ${tunnelResult.error}` : ''}) — cannot verify tunnel ${tunnelUUID}`;
       }
 
-      result.responseMs = Date.now() - startTime;
-      return result;
-    }
-
-    try {
-      const addrs = await dns.promises.resolve4(record.value);
-      if (addrs.length > 0) targetIP = addrs[0];
-      targetHost = record.value;
-    } catch (e) {
-      result.status = HEALTH_STATUS.DEAD;
-      result.errorMessage = `CNAME target ${record.value} does not resolve`;
-      result.checkMethod = 'dns_resolve';
       result.responseMs = Date.now() - startTime;
       return result;
     }
