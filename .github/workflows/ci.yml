@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  IMAGE_NAME: djlactose/dnsscaner
+
+jobs:
+  audit:
+    name: Lint & audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --omit=dev --no-audit --no-fund
+
+      - name: Audit dependencies (fail on high+)
+        run: npm audit --omit=dev --audit-level=high
+
+  build:
+    name: Build & scan image
+    runs-on: ubuntu-latest
+    needs: audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Docker Hub login
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # main → :latest, :sha-<short>
+      # develop → :beta, :beta-<short>
+      # PRs build but do not push.
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=long,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=beta,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=sha,prefix=beta-,format=long,enable=${{ github.ref == 'refs/heads/develop' }}
+
+      - name: Build (and push on main/develop) with SBOM + provenance
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker Scout — CVE report (PR)
+        if: github.event_name == 'pull_request'
+        uses: docker/scout-action@v1
+        with:
+          command: cves,quickview
+          image: ${{ env.IMAGE_NAME }}:${{ github.base_ref == 'develop' && 'beta' || 'latest' }}
+          only-severities: critical,high
+          exit-code: true
+          write-comment: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker Scout — compare main to deployed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/scout-action@v1
+        with:
+          command: compare
+          image: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          to: ${{ env.IMAGE_NAME }}:latest
+          only-severities: critical,high
+          ignore-unchanged: true
+
+      - name: Docker Scout — compare beta to deployed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        uses: docker/scout-action@v1
+        with:
+          command: compare
+          image: ${{ env.IMAGE_NAME }}:beta-${{ github.sha }}
+          to: ${{ env.IMAGE_NAME }}:beta
+          only-severities: critical,high
+          ignore-unchanged: true

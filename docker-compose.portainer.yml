@@ -1,12 +1,23 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:93d55776e04376e19adb2733e3ccebb4392ee7dd86d8ff238503b30fe719c84f
     entrypoint:
       - /bin/sh
       - -c
       - |
+        set -e
+        SECRETS_FILE=/run/secrets_shared/db_password
+        mkdir -p /run/secrets_shared
+        if [ ! -s "$$SECRETS_FILE" ]; then
+          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$SECRETS_FILE"
+          # 0644 so the app container (different uid) can read. The volume
+          # itself is only mounted by db and app, so host users are not a
+          # concern.
+          chmod 644 "$$SECRETS_FILE"
+          echo "[db] Generated DB password."
+        fi
+        export POSTGRES_PASSWORD="$$(cat "$$SECRETS_FILE")"
         PGDATA=/var/lib/postgresql/data
-        # Detect corrupted data dir: PG_VERSION exists but template DB is missing
         if [ -f "$$PGDATA/PG_VERSION" ] && [ ! -d "$$PGDATA/base/1" ]; then
           echo "[db] Corrupted data directory detected, wiping for clean init..."
           rm -rf "$$PGDATA"/*
@@ -15,11 +26,19 @@ services:
     environment:
       POSTGRES_DB: dnsscanner
       POSTGRES_USER: dnsscanner
-      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - sharedsecrets:/run/secrets_shared
     networks:
       - internal
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_READ_SEARCH
+      - FOWNER
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dnsscanner"]
       interval: 10s
@@ -43,10 +62,9 @@ services:
       DB_PORT: "5432"
       DB_NAME: dnsscanner
       DB_USER: dnsscanner
-      DB_PASSWORD: trust
       PORT: "8080"
       NODE_ENV: production
-      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
       MAX_DOMAINS: ${MAX_DOMAINS:-50}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -56,27 +74,40 @@ services:
       - -c
       - |
         set -e
-        SECRETS_FILE=/home/node/secrets.env
-        if [ ! -f "$$SECRETS_FILE" ]; then
-          echo "[app] Generating secrets..."
-          mkdir -p /home/node
+        SHARED=/run/secrets_shared
+        APP_SECRETS=/home/node/secrets.env
+        # Wait up to ~2 min for the db service to publish its password.
+        for i in $$(seq 1 60); do
+          if [ -s "$$SHARED/db_password" ]; then break; fi
+          echo "[app] waiting for db password ($$i/60)..."
+          sleep 2
+        done
+        if [ ! -s "$$SHARED/db_password" ]; then
+          echo "[app] db password never appeared — aborting." >&2
+          exit 1
+        fi
+        export DB_PASSWORD="$$(cat "$$SHARED/db_password")"
+        mkdir -p /home/node
+        if [ ! -f "$$APP_SECRETS" ]; then
           S1=$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
           S2=$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-          printf 'SESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$S1" "$$S2" > "$$SECRETS_FILE"
-          echo "[app] Secrets generated."
-        else
-          echo "[app] Loading existing secrets."
+          printf 'SESSION_SECRET=%s\nENCRYPTION_KEY=%s\n' "$$S1" "$$S2" > "$$APP_SECRETS"
+          chmod 600 "$$APP_SECRETS"
+          echo "[app] App secrets generated."
         fi
-        . "$$SECRETS_FILE"
+        . "$$APP_SECRETS"
         export SESSION_SECRET ENCRYPTION_KEY
-        echo "[app] Starting application..."
         exec node server.js
     volumes:
       - appdata:/home/node
+      - sharedsecrets:/run/secrets_shared:ro
     depends_on:
       - db
     networks:
       - internal
+    read_only: true
+    tmpfs:
+      - /tmp
     cap_drop:
       - ALL
     cap_add:
@@ -97,6 +128,7 @@ services:
 volumes:
   pgdata:
   appdata:
+  sharedsecrets:
 
 networks:
   internal:

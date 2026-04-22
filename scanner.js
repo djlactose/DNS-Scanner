@@ -4,6 +4,7 @@ const dns = require('node:dns');
 const net = require('node:net');
 const tls = require('node:tls');
 const { execFile } = require('node:child_process');
+const ipaddr = require('ipaddr.js');
 const { query } = require('./db');
 const { checkTakeover } = require('./takeover');
 const { checkPropagation } = require('./propagation');
@@ -70,21 +71,29 @@ class Semaphore {
   }
 }
 
+// Treat these ipaddr.js range labels as "do not scan". "unicast" is the only
+// public range; everything else (loopback, linkLocal, uniqueLocal, private,
+// carrierGradeNat, reserved, multicast, benchmarking, amt, as112, broadcast,
+// unspecified) is non-routable or otherwise unsafe to probe from the server.
+const BLOCKED_IP_RANGES = new Set([
+  'unspecified', 'broadcast', 'multicast', 'linkLocal', 'loopback',
+  'carrierGradeNat', 'private', 'reserved', 'benchmarking', 'amt', 'as112',
+  'uniqueLocal', 'ipv4Mapped', 'rfc6145', 'rfc6052', '6to4', 'teredo',
+]);
+
 function isPrivateIP(ip) {
   if (_allowPrivateRanges) return false;
-  if (ip === '::1' || ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80')) return true;
-  // Handle IPv4-mapped IPv6 (::ffff:10.0.0.1)
-  let v4 = ip;
-  if (ip.startsWith('::ffff:')) v4 = ip.slice(7);
-  const parts = v4.split('.').map(Number);
-  if (parts.length !== 4) return false;
-  if (parts[0] === 10) return true;
-  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-  if (parts[0] === 192 && parts[1] === 168) return true;
-  if (parts[0] === 127) return true;
-  if (parts[0] === 169 && parts[1] === 254) return true;
-  if (parts[0] === 0) return true;
-  return false;
+  let parsed;
+  try {
+    parsed = ipaddr.parse(ip);
+  } catch (_) {
+    return true; // unparseable → refuse rather than probe
+  }
+  // IPv4-mapped IPv6 (::ffff:a.b.c.d) → classify the embedded v4 address.
+  if (parsed.kind() === 'ipv6' && parsed.isIPv4MappedAddress()) {
+    parsed = parsed.toIPv4Address();
+  }
+  return BLOCKED_IP_RANGES.has(parsed.range());
 }
 
 function execDig(args, timeoutMs = 15000) {
@@ -434,6 +443,9 @@ async function httpCheck(host, port, useHttps = false) {
 async function getSSLInfo(host, port = 443) {
   return new Promise((resolve) => {
     try {
+      // rejectUnauthorized:false is intentional — this function exists to
+      // report on potentially expired/invalid certs. `authorized` +
+      // `authorizationError` below surface the validity to the caller.
       const socket = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout: _healthCheckTimeoutMs }, () => {
         const cert = socket.getPeerCertificate();
         const authorized = socket.authorized;

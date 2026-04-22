@@ -195,7 +195,7 @@ const App = {
         <h1>DNS Scanner</h1><p>Sign in to continue</p>
         <div class="form-group"><label>Username</label><input id="login-user" autocomplete="username"></div>
         <div class="form-group"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password"></div>
-        <div id="login-error" class="form-error" style="display:${errorMsg ? 'block' : 'none'}">${errorMsg ? (errorMap[errorMsg] || errorMsg) : ''}</div>
+        <div id="login-error" class="form-error" style="display:${errorMsg ? 'block' : 'none'}">${errorMsg ? this.esc(errorMap[errorMsg] || errorMsg) : ''}</div>
         <button class="btn-primary" onclick="App.doLogin()">Sign In</button>
         <div class="auth-switch"><a href="#forgot-password">Forgot password?</a></div>
         ${altLogins}
@@ -592,7 +592,7 @@ const App = {
         </div>
         <div class="domain-actions" onclick="event.stopPropagation()">
           <button class="btn-sm btn-secondary" onclick="App.scanDomain(${d.id})" ${this.scanningDomains.has(d.id) ? 'disabled' : ''}>${this.scanningDomains.has(d.id) ? 'Scanning...' : 'Scan Now'}</button>
-          ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)">&#10005;</button>` : ''}
+          ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})">&#9998;</button><button class="btn-sm btn-icon" data-id="${d.id}" data-name="${this.esc(d.domain)}" onclick="App.deleteDomain(this.dataset.id, this.dataset.name)" style="color:var(--danger)">&#10005;</button>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -975,7 +975,7 @@ const App = {
       drawerHtml += `<div class="drawer-section"><h4>DNS Propagation ${prop.consistent ? '<span style="color:var(--status-alive)">(Consistent)</span>' : '<span style="color:var(--status-warning)">(Inconsistent)</span>'}</h4>`;
       for (const r of (prop.resolvers || [])) {
         const cls = r.error ? 'error' : (prop.consistent ? 'match' : 'mismatch');
-        drawerHtml += `<div class="prop-row"><span class="prop-dot ${cls}"></span><strong>${this.esc(r.name)}</strong> (${r.server}): ${r.error ? `<span style="color:var(--status-dead)">${r.error}</span>` : this.esc(r.values?.join(', ') || '-')}</div>`;
+        drawerHtml += `<div class="prop-row"><span class="prop-dot ${cls}"></span><strong>${this.esc(r.name)}</strong> (${this.esc(r.server)}): ${r.error ? `<span style="color:var(--status-dead)">${this.esc(r.error)}</span>` : this.esc(r.values?.join(', ') || '-')}</div>`;
       }
       drawerHtml += `</div>`;
     }
@@ -1140,7 +1140,7 @@ const App = {
             whtml += `<div class="card" style="margin-bottom:8px">
               <div style="display:flex;justify-content:space-between;align-items:center">
                 <div><strong>${this.esc(wh.name)}</strong><div style="font-size:12px;color:var(--text-muted)">${this.esc(wh.url)}</div>
-                  <div style="font-size:12px;margin-top:4px">${events.map(e => `<span class="status-badge info" style="margin:2px">${e}</span>`).join('')}</div>
+                  <div style="font-size:12px;margin-top:4px">${events.map(e => `<span class="status-badge info" style="margin:2px">${this.esc(e)}</span>`).join('')}</div>
                 </div>
                 <div style="display:flex;gap:4px">
                   <button class="btn-sm btn-secondary" onclick="App.testWebhook(${wh.id})">Test</button>
@@ -1192,7 +1192,7 @@ const App = {
                 <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
               </select></td>
               <td>${this.formatDate(u.created_at)}</td>
-              <td>${u.id !== this.user.id ? `<button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteUser(${u.id}, '${this.esc(u.username)}')">&#10005;</button>` : ''}</td>
+              <td>${u.id !== this.user.id ? `<button class="btn-sm btn-icon" style="color:var(--danger)" data-id="${u.id}" data-name="${this.esc(u.username)}" onclick="App.deleteUser(this.dataset.id, this.dataset.name)">&#10005;</button>` : ''}</td>
             </tr>`;
           }
           uhtml += `</tbody></table></div>`;
@@ -1253,7 +1253,7 @@ const App = {
         <div class="passkey-item">
           <div>
             <strong>${this.esc(pk.name)}</strong>
-            <div style="font-size:12px;color:var(--text-muted)">${pk.device_type || 'Unknown device'} &middot; Added ${this.formatDate(pk.created_at)}${pk.last_used_at ? ' &middot; Last used ' + this.timeAgo(pk.last_used_at) : ''}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${this.esc(pk.device_type || 'Unknown device')} &middot; Added ${this.formatDate(pk.created_at)}${pk.last_used_at ? ' &middot; Last used ' + this.timeAgo(pk.last_used_at) : ''}</div>
           </div>
           <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deletePasskey(${pk.id})">&#10005;</button>
         </div>

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:93d55776e04376e19adb2733e3ccebb4392ee7dd86d8ff238503b30fe719c84f
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-dnsscanner}
@@ -10,6 +10,14 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - internal
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_READ_SEARCH
+      - FOWNER
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dnsscanner}"]
       interval: 10s
@@ -33,7 +41,7 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       PORT: 8080
       NODE_ENV: production
-      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       ALLOW_PRIVATE_RANGES: ${ALLOW_PRIVATE_RANGES:-false}
       MAX_DOMAINS: ${MAX_DOMAINS:-50}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -43,6 +51,9 @@ services:
         condition: service_healthy
     networks:
       - internal
+    read_only: true
+    tmpfs:
+      - /tmp
     cap_drop:
       - ALL
     cap_add:

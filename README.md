@@ -96,7 +96,7 @@ This generates a `.env` file with random secrets and starts the containers. If y
 
 Open `http://localhost:8080` in your browser.
 
-The first user to register automatically becomes an admin.
+**Bootstrap the first admin:** registration is disabled by default. To create the first user, temporarily set `REGISTRATION_ENABLED=true` in `.env` (or the compose environment), restart the app, register — the first user is automatically an admin — then set `REGISTRATION_ENABLED=false` and restart again. After that, additional users are added via the invite flow in Settings → Users.
 
 ## Configuration
 
@@ -107,7 +107,7 @@ All configuration is via environment variables (see `.env.example`). Secrets (`D
 | `DB_PASSWORD` | No | *auto-generated* | PostgreSQL password |
 | `SESSION_SECRET` | No | *auto-generated* | Session encryption key (min 32 chars) |
 | `ENCRYPTION_KEY` | No | *auto-generated* | SMTP credential encryption key (min 32 chars) |
-| `REGISTRATION_ENABLED` | No | `true` | Allow new user registration |
+| `REGISTRATION_ENABLED` | No | `false` | Allow new user registration. Enable only to bootstrap the first admin, then disable again. |
 | `ALLOW_PRIVATE_RANGES` | No | `false` | Allow scanning private IP ranges |
 | `MAX_DOMAINS` | No | `50` | Maximum domains per instance |
 | `APP_PORT` | No | `8080` | Host port for web UI |

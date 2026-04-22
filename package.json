@@ -9,16 +9,17 @@
     "test": "node --test test/api.test.js"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^11.0.0",
     "bcrypt": "^6.0.0",
+    "compression": "^1.8.0",
     "connect-pg-simple": "^10.0.0",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "express-session": "^1.18.1",
-    "compression": "^1.8.0",
+    "ipaddr.js": "^2.3.0",
     "multer": "^2.0.0",
     "nodemailer": "^8.0.0",
     "pg": "^8.14.0",
-    "@simplewebauthn/server": "^11.0.0",
     "web-push": "^3.6.7"
   },
   "engines": {
