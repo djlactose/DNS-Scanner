@@ -45,16 +45,18 @@ Object.assign(App, {
                   <div><span>${this.esc(s.label)}</span>${s.description ? `<div style="font-size:12px;color:var(--text-muted)">${this.esc(s.description)}</div>` : ''}</div>
                 </label>`;
               } else if (s.type === 'number') {
+                const fid = `sys-${s.key}`;
                 shtml += `<div class="form-group" style="margin-bottom:12px">
-                  <label>${this.esc(s.label)}</label>
+                  <label for="${fid}">${this.esc(s.label)}</label>
                   ${s.description ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${this.esc(s.description)}</div>` : ''}
-                  <input type="number" class="sys-setting" data-key="${s.key}" value="${this.esc(s.value)}">
+                  <input id="${fid}" type="number" class="sys-setting" data-key="${s.key}" value="${this.esc(s.value)}">
                 </div>`;
               } else {
+                const fid = `sys-${s.key}`;
                 shtml += `<div class="form-group" style="margin-bottom:12px">
-                  <label>${this.esc(s.label)}${s.sensitive ? ' (encrypted)' : ''}</label>
+                  <label for="${fid}">${this.esc(s.label)}${s.sensitive ? ' (encrypted)' : ''}</label>
                   ${s.description ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${this.esc(s.description)}</div>` : ''}
-                  <input type="${s.sensitive ? 'password' : 'text'}" class="sys-setting" data-key="${s.key}"
+                  <input id="${fid}" type="${s.sensitive ? 'password' : 'text'}" class="sys-setting" data-key="${s.key}"
                     value="${s.sensitive ? '' : this.esc(s.value || '')}"
                     placeholder="${s.sensitive ? (s.hasValue ? 'Leave blank to keep current' : 'Not set') : ''}">
                 </div>`;
@@ -71,12 +73,12 @@ Object.assign(App, {
         const hasPassword = this.user.has_password !== false;
         content.innerHTML = `<div class="card" style="max-width:500px">
           <h3 style="margin-bottom:16px">Profile</h3>
-          <div class="form-group"><label>Username</label><input value="${this.esc(this.user.username)}" disabled></div>
-          <div class="form-group"><label>Email</label><input id="set-email" value="${this.esc(this.user.email || '')}"></div>
+          <div class="form-group"><label for="set-username">Username</label><input id="set-username" value="${this.esc(this.user.username)}" disabled></div>
+          <div class="form-group"><label for="set-email">Email</label><input id="set-email" value="${this.esc(this.user.email || '')}"></div>
           <button class="btn-primary" onclick="App.updateProfile()">Save</button>
           <h3 style="margin:24px 0 16px">${hasPassword ? 'Change Password' : 'Set Password'}</h3>
-          ${hasPassword ? '<div class="form-group"><label>Current Password</label><input id="set-curpass" type="password"></div>' : ''}
-          <div class="form-group"><label>New Password</label><input id="set-newpass" type="password"></div>
+          ${hasPassword ? '<div class="form-group"><label for="set-curpass">Current Password</label><input id="set-curpass" type="password"></div>' : ''}
+          <div class="form-group"><label for="set-newpass">New Password</label><input id="set-newpass" type="password"></div>
           <button class="btn-primary" onclick="App.changePassword()">${hasPassword ? 'Update Password' : 'Set Password'}</button>
         </div>
         ${window.PublicKeyCredential ? `
@@ -140,11 +142,11 @@ Object.assign(App, {
           const smtp = await this.api('/smtp');
           content.innerHTML = `<div class="card" style="max-width:500px">
             <h3 style="margin-bottom:16px">SMTP Configuration</h3>
-            <div class="form-group"><label>Host</label><input id="smtp-host" value="${this.esc(smtp.smtp_host || '')}"></div>
-            <div class="form-group"><label>Port</label><input id="smtp-port" type="number" value="${smtp.smtp_port || 587}"></div>
-            <div class="form-group"><label>Username</label><input id="smtp-user" value="${this.esc(smtp.smtp_user || '')}"></div>
-            <div class="form-group"><label>Password (optional)</label><input id="smtp-pass" type="password" placeholder="Leave blank if not required"></div>
-            <div class="form-group"><label>From Address</label><input id="smtp-from" value="${this.esc(smtp.smtp_from || '')}" placeholder="noreply@example.com"></div>
+            <div class="form-group"><label for="smtp-host">Host</label><input id="smtp-host" value="${this.esc(smtp.smtp_host || '')}"></div>
+            <div class="form-group"><label for="smtp-port">Port</label><input id="smtp-port" type="number" value="${smtp.smtp_port || 587}"></div>
+            <div class="form-group"><label for="smtp-user">Username</label><input id="smtp-user" value="${this.esc(smtp.smtp_user || '')}"></div>
+            <div class="form-group"><label for="smtp-pass">Password (optional)</label><input id="smtp-pass" type="password" placeholder="Leave blank if not required"></div>
+            <div class="form-group"><label for="smtp-from">From Address</label><input id="smtp-from" value="${this.esc(smtp.smtp_from || '')}" placeholder="noreply@example.com"></div>
             <label class="toggle" style="margin-bottom:16px"><input type="checkbox" id="smtp-secure" ${smtp.smtp_secure !== false ? 'checked' : ''}><div class="toggle-track"></div>Use TLS</label>
             <div style="display:flex;gap:8px"><button class="btn-primary" onclick="App.saveSMTP()">Save</button><button class="btn-secondary" onclick="App.testEmail()">Test</button></div>
           </div>`;
@@ -165,7 +167,7 @@ Object.assign(App, {
                 </div>
                 <div style="display:flex;gap:4px">
                   <button class="btn-sm btn-secondary" onclick="App.testWebhook(${wh.id})">Test</button>
-                  <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteWebhook(${wh.id})">&#10005;</button>
+                  <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteWebhook(${wh.id})" aria-label="Delete webhook ${this.esc(wh.name)}">&#10005;</button>
                 </div>
               </div>
             </div>`;
@@ -206,7 +208,7 @@ Object.assign(App, {
                 <div><strong>${this.esc(inv.email)}</strong> <span class="status-badge info">${this.esc(inv.role)}</span>
                   <div style="font-size:12px;color:var(--text-muted)">Invited by ${this.esc(inv.invited_by_username || 'unknown')} &middot; Expires ${this.formatDate(inv.expires_at)}</div>
                 </div>
-                <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.revokeInvite(${inv.id})">&#10005;</button>
+                <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.revokeInvite(${inv.id})" aria-label="Revoke invitation for ${this.esc(inv.email)}">&#10005;</button>
               </div>`;
             }
           }
@@ -222,7 +224,7 @@ Object.assign(App, {
               </select></td>
               <td><button class="btn-sm btn-secondary" onclick="App.editUserAccess(${u.id}, '${this.esc(u.username)}', ${this.esc(JSON.stringify(allowedTags))})">${accessLabel}</button></td>
               <td>${this.formatDate(u.created_at)}</td>
-              <td>${u.id !== this.user.id ? `<button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteUser(${u.id}, '${this.esc(u.username)}')">&#10005;</button>` : ''}</td>
+              <td>${u.id !== this.user.id ? `<button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteUser(${u.id}, '${this.esc(u.username)}')" aria-label="Delete user ${this.esc(u.username)}">&#10005;</button>` : ''}</td>
             </tr>`;
           }
           uhtml += `</tbody></table></div>`;
@@ -239,7 +241,7 @@ Object.assign(App, {
             thtml += `<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
               <div><span class="tag" style="background:${this.esc(t.color)}">${this.esc(t.name)}</span></div>
               <div style="display:flex;gap:4px">
-                <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteTag(${t.id})">&#10005;</button>
+                <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteTag(${t.id})" aria-label="Delete tag ${this.esc(t.name)}">&#10005;</button>
               </div>
             </div>`;
           }
@@ -291,7 +293,7 @@ Object.assign(App, {
             <strong>${this.esc(pk.name)}</strong>
             <div style="font-size:12px;color:var(--text-muted)">${pk.device_type || 'Unknown device'} &middot; Added ${this.formatDate(pk.created_at)}${pk.last_used_at ? ' &middot; Last used ' + this.timeAgo(pk.last_used_at) : ''}</div>
           </div>
-          <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deletePasskey(${pk.id})">&#10005;</button>
+          <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deletePasskey(${pk.id})" aria-label="Delete passkey ${this.esc(pk.name)}">&#10005;</button>
         </div>
       `).join('');
     } catch (e) { container.innerHTML = '<p style="color:var(--danger)">Failed to load passkeys</p>'; }
@@ -402,7 +404,7 @@ Object.assign(App, {
             <strong>${this.esc(k.name)}</strong>
             <div style="font-size:12px;color:var(--text-muted)">Created ${this.formatDate(k.created_at)}${k.last_used_at ? ' &middot; Last used ' + this.timeAgo(k.last_used_at) : ' &middot; Never used'}</div>
           </div>
-          <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteApiKey(${k.id})">&#10005;</button>
+          <button class="btn-sm btn-icon" style="color:var(--danger)" onclick="App.deleteApiKey(${k.id})" aria-label="Delete API key ${this.esc(k.name)}">&#10005;</button>
         </div>
       `).join('') + '<div style="margin-bottom:12px"></div>';
     } catch (e) { container.innerHTML = '<p style="color:var(--danger);font-size:13px;margin-bottom:12px">Failed to load API keys</p>'; }
@@ -410,7 +412,7 @@ Object.assign(App, {
 
   async generateApiKey() {
     this.showModal('Generate API Key', `
-      <div class="form-group"><label>Key Name</label><input id="modal-key-name" placeholder="e.g., CI/CD Pipeline"></div>
+      <div class="form-group"><label for="modal-key-name">Key Name</label><input id="modal-key-name" placeholder="e.g., CI/CD Pipeline"></div>
       <div id="generated-key-display" style="display:none;margin-top:12px">
         <label style="font-weight:600;margin-bottom:4px;display:block">Your API Key (copy now - it won't be shown again):</label>
         <div style="display:flex;gap:8px;align-items:center">
@@ -530,8 +532,8 @@ Object.assign(App, {
   // ─── User Management ───
   showInviteUser() {
     this.showModal('Invite User', `
-      <div class="form-group"><label>Email</label><input id="modal-invite-email" type="email" placeholder="user@example.com"></div>
-      <div class="form-group"><label>Role</label><select id="modal-invite-role">
+      <div class="form-group"><label for="modal-invite-email">Email</label><input id="modal-invite-email" type="email" placeholder="user@example.com"></div>
+      <div class="form-group"><label for="modal-invite-role">Role</label><select id="modal-invite-role">
         <option value="viewer">Viewer</option>
         <option value="admin">Admin</option>
       </select></div>
@@ -608,8 +610,8 @@ Object.assign(App, {
   // ─── Tags ───
   showAddTag() {
     this.showModal('Add Tag', `
-      <div class="form-group"><label>Name</label><input id="modal-tag-name" placeholder="production"></div>
-      <div class="form-group"><label>Color</label><input id="modal-tag-color" type="color" value="#3b82f6" style="height:40px"></div>
+      <div class="form-group"><label for="modal-tag-name">Name</label><input id="modal-tag-name" placeholder="production"></div>
+      <div class="form-group"><label for="modal-tag-color">Color</label><input id="modal-tag-color" type="color" value="#3b82f6" style="height:40px"></div>
     `, async () => {
       await this.api('/tags', { method: 'POST', body: { name: document.getElementById('modal-tag-name').value, color: document.getElementById('modal-tag-color').value } });
       this.toast('Tag created', 'success');
@@ -626,8 +628,8 @@ Object.assign(App, {
   showAddWebhook() {
     const events = ['record.dead', 'record.recovered', 'record.takeover_risk', 'domain.expiry_warning', 'cert.expiry_warning', 'scan.completed', 'propagation.inconsistent', 'dns.changed'];
     this.showModal('Add Webhook', `
-      <div class="form-group"><label>Name</label><input id="modal-wh-name" placeholder="Slack Alert"></div>
-      <div class="form-group"><label>URL</label><input id="modal-wh-url" placeholder="https://hooks.slack.com/..."></div>
+      <div class="form-group"><label for="modal-wh-name">Name</label><input id="modal-wh-name" placeholder="Slack Alert"></div>
+      <div class="form-group"><label for="modal-wh-url">URL</label><input id="modal-wh-url" placeholder="https://hooks.slack.com/..."></div>
       <div class="form-group"><label>Events</label>
         ${events.map(e => `<label style="display:block;margin:4px 0"><input type="checkbox" class="wh-event" value="${e}" checked> ${e}</label>`).join('')}
       </div>

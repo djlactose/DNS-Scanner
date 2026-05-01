@@ -107,13 +107,14 @@ Object.assign(App, {
     el.innerHTML = filtered.map(d => {
       const deadCount = parseInt(d.dead_count || 0);
       const dotClass = this.scanningDomains.has(d.id) ? 'scanning' : deadCount > 0 ? 'dead' : 'alive';
+      const dotLabel = this.scanningDomains.has(d.id) ? 'Scanning' : deadCount > 0 ? `${deadCount} dead record${deadCount === 1 ? '' : 's'}` : 'Healthy';
       const tags = (typeof d.tags === 'string' ? JSON.parse(d.tags) : d.tags) || [];
       const tagHtml = tags.filter(t => t && t.name).map(t => `<span class="tag" style="background:${this.esc(t.color)}">${this.esc(t.name)}</span>`).join('');
       const cardStateClass = this.scanningDomains.has(d.id) ? 'state-scanning' : deadCount > 0 ? 'state-dead' : '';
       return `<div class="domain-card card ${cardStateClass}" data-id="${d.id}" onclick="App.navigate('domains/${d.id}')">
         <div class="domain-card-row">
-          ${isAdmin ? `<input type="checkbox" class="domain-check" data-id="${d.id}" onclick="event.stopPropagation(); App.updateBulkBar()" ${this.selectedDomains.has(d.id) ? 'checked' : ''}>` : ''}
-          <div class="domain-dot ${dotClass}"></div>
+          ${isAdmin ? `<input type="checkbox" class="domain-check" data-id="${d.id}" onclick="event.stopPropagation(); App.updateBulkBar()" ${this.selectedDomains.has(d.id) ? 'checked' : ''} aria-label="Select ${this.esc(d.domain)}">` : ''}
+          <div class="domain-dot ${dotClass}" role="img" aria-label="${dotLabel}" title="${dotLabel}"></div>
           <div class="domain-info">
             <div class="domain-name">${this.esc(d.display_name || d.domain)} ${tagHtml}</div>
             <div class="domain-meta">
@@ -125,7 +126,7 @@ Object.assign(App, {
           </div>
           <div class="domain-actions" onclick="event.stopPropagation()">
             <button class="btn-sm btn-secondary" onclick="App.scanDomain(${d.id})" ${this.scanningDomains.has(d.id) ? 'disabled' : ''}>${this.scanningDomains.has(d.id) ? 'Scanning...' : 'Scan Now'}</button>
-            ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})" title="Edit domain">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)" title="Delete domain">&#10005;</button>` : ''}
+            ${isAdmin ? `<button class="btn-sm btn-icon" onclick="App.showEditDomain(${d.id})" title="Edit domain" aria-label="Edit ${this.esc(d.domain)}">&#9998;</button><button class="btn-sm btn-icon" onclick="App.deleteDomain(${d.id}, '${this.esc(d.domain)}')" style="color:var(--danger)" title="Delete domain" aria-label="Delete ${this.esc(d.domain)}">&#10005;</button>` : ''}
           </div>
         </div>
         ${this.scanningDomains.has(d.id) ? `<div class="scan-progress" data-domain-id="${d.id}"><div class="progress-track"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Starting scan...</div></div>` : ''}
@@ -224,8 +225,8 @@ Object.assign(App, {
 
   showAddDomain() {
     this.showModal('Add Domain', `
-      <div class="form-group"><label>Domain</label><input id="modal-domain" placeholder="example.com"></div>
-      <div class="form-group"><label>Display Name (optional)</label><input id="modal-display" placeholder="My Website"></div>
+      <div class="form-group"><label for="modal-domain">Domain</label><input id="modal-domain" placeholder="example.com"></div>
+      <div class="form-group"><label for="modal-display">Display Name (optional)</label><input id="modal-display" placeholder="My Website"></div>
       <div class="form-group"><label>Scan Interval</label>
         <select id="modal-interval"><option value="60">1 hour</option><option value="180">3 hours</option><option value="360" selected>6 hours</option><option value="720">12 hours</option><option value="1440">24 hours</option></select>
       </div>
@@ -244,7 +245,7 @@ Object.assign(App, {
     const domain = this._domains?.find(d => d.id === id);
     if (!domain) return;
     this.showModal('Edit Domain', `
-      <div class="form-group"><label>Display Name</label><input id="modal-display" value="${this.esc(domain.display_name || '')}"></div>
+      <div class="form-group"><label for="modal-display">Display Name</label><input id="modal-display" value="${this.esc(domain.display_name || '')}"></div>
       <div class="form-group"><label>Scan Interval</label>
         <select id="modal-interval">
           ${[60, 180, 360, 720, 1440].map(v => `<option value="${v}" ${domain.scan_interval_minutes === v ? 'selected' : ''}>${v < 60 ? v + ' min' : v / 60 + ' hours'}</option>`).join('')}
@@ -615,8 +616,8 @@ Object.assign(App, {
 
     let drawerHtml = `
       <div class="drawer-header">
-        <h3>${this.esc(record.record_type)} Record: ${this.esc(fullName)}</h3>
-        <button class="btn-icon" onclick="App.closeDrawer()">&#10005;</button>
+        <h3 id="drawer-title">${this.esc(record.record_type)} Record: ${this.esc(fullName)}</h3>
+        <button class="btn-icon" onclick="App.closeDrawer()" aria-label="Close drawer">&#10005;</button>
       </div>
       <div class="drawer-body">
         <div class="drawer-section">
@@ -719,7 +720,7 @@ Object.assign(App, {
       if (history.length > 0) {
         drawerHtml += `<div class="drawer-section"><h4>Health History</h4><div class="health-timeline">`;
         for (const hc of history.slice(0, 30).reverse()) {
-          drawerHtml += `<div class="health-block ${hc.status}" data-tooltip="${this.formatDate(hc.checked_at)} - ${hc.status}"></div>`;
+          drawerHtml += `<div class="health-block ${hc.status}" data-tooltip="${this.formatDate(hc.checked_at)} - ${hc.status}" role="img" aria-label="${this.formatDate(hc.checked_at)}: ${hc.status}"></div>`;
         }
         drawerHtml += `</div></div>`;
       }
@@ -749,6 +750,9 @@ Object.assign(App, {
     const drawer = document.getElementById('drawer');
     const overlay = document.getElementById('modal-overlay');
     drawer.innerHTML = drawerHtml;
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'true');
+    drawer.setAttribute('aria-labelledby', 'drawer-title');
     drawer.classList.remove('hidden');
     requestAnimationFrame(() => drawer.classList.add('open'));
     overlay.classList.remove('hidden');
@@ -761,5 +765,14 @@ Object.assign(App, {
       }
     };
     setTimeout(() => document.addEventListener('click', this._drawerClickHandler), 100);
+    // Escape closes the drawer; focus moves into the drawer and is restored
+    // to the originating element on close.
+    this._drawerReturnFocus = document.activeElement;
+    this._drawerKeyHandler = (e) => { if (e.key === 'Escape') App.closeDrawer(); };
+    document.addEventListener('keydown', this._drawerKeyHandler);
+    setTimeout(() => {
+      const closeBtn = drawer.querySelector('.drawer-header .btn-icon');
+      if (closeBtn) closeBtn.focus();
+    }, 0);
   },
 });

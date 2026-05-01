@@ -216,7 +216,7 @@ const App = {
           <div class="sidebar-footer">
             <div style="margin-bottom:4px">${this.esc(this.user.username)} (${this.esc(this.user.role)})</div>
             <div style="display:flex;gap:8px;align-items:center">
-              <button id="theme-toggle" class="btn-icon" onclick="App.cycleTheme()" title="Toggle theme" style="padding:2px">${this.getThemeIcon()}</button>
+              <button id="theme-toggle" class="btn-icon" onclick="App.cycleTheme()" title="Toggle theme" aria-label="Toggle color theme" style="padding:2px">${this.getThemeIcon()}</button>
               <a href="#" onclick="App.logout();return false">Sign out</a>
             </div>
             <div style="display:flex;gap:12px;align-items:center;margin-top:8px;font-size:0.85em">
@@ -290,14 +290,14 @@ const App = {
   showModal(title, body, onConfirm, confirmText = 'Save') {
     const overlay = document.getElementById('modal-overlay');
     overlay.classList.remove('hidden');
-    overlay.innerHTML = `<div class="modal">
-      <h3>${title}</h3>
+    overlay.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h3 id="modal-title">${title}</h3>
       ${body}
       <div class="form-actions">
         <button class="btn-secondary" onclick="App.closeModal()">Cancel</button>
         <button class="btn-primary" id="modal-confirm">${confirmText}</button>
       </div>
-      <div id="modal-error" class="form-error" style="display:none;margin-top:8px"></div>
+      <div id="modal-error" class="form-error" style="display:none;margin-top:8px" role="alert"></div>
     </div>`;
     overlay.querySelector('.modal').onclick = (e) => e.stopPropagation();
     overlay.onclick = () => this.closeModal();
@@ -310,11 +310,28 @@ const App = {
         if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
       }
     };
+    // Move focus into the dialog and remember where it came from so we can
+    // restore it on close — keyboard users shouldn't lose their place.
+    this._modalReturnFocus = document.activeElement;
+    setTimeout(() => {
+      const firstFocus = overlay.querySelector('input, select, textarea, button');
+      if (firstFocus) firstFocus.focus();
+    }, 0);
+    this._modalKeyHandler = (e) => { if (e.key === 'Escape') this.closeModal(); };
+    document.addEventListener('keydown', this._modalKeyHandler);
   },
 
   closeModal() {
     document.getElementById('modal-overlay').classList.add('hidden');
     document.getElementById('modal-overlay').innerHTML = '';
+    if (this._modalKeyHandler) {
+      document.removeEventListener('keydown', this._modalKeyHandler);
+      this._modalKeyHandler = null;
+    }
+    if (this._modalReturnFocus && typeof this._modalReturnFocus.focus === 'function') {
+      this._modalReturnFocus.focus();
+    }
+    this._modalReturnFocus = null;
   },
 
   // ─── Drawer ───
@@ -334,6 +351,14 @@ const App = {
       document.removeEventListener('click', this._drawerClickHandler);
       this._drawerClickHandler = null;
     }
+    if (this._drawerKeyHandler) {
+      document.removeEventListener('keydown', this._drawerKeyHandler);
+      this._drawerKeyHandler = null;
+    }
+    if (this._drawerReturnFocus && typeof this._drawerReturnFocus.focus === 'function') {
+      this._drawerReturnFocus.focus();
+    }
+    this._drawerReturnFocus = null;
     setTimeout(() => { drawer.classList.add('hidden'); drawer.innerHTML = ''; }, 250);
   },
 

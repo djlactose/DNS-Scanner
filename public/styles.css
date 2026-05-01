@@ -92,6 +92,22 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
+/* Keyboard focus ring for any interactive element. :focus-visible only fires
+   on keyboard navigation, so mouse clicks don't show the outline. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline-offset: 0;
+}
+
 /* Layout */
 .app-layout { display: flex; min-height: 100vh; }
 

@@ -3,8 +3,8 @@ Object.assign(App, {
     document.getElementById('app').innerHTML = `
       <div class="auth-page"><div class="auth-card card">
         <h1>DNS Scanner</h1><p>Sign in to your account</p>
-        <div class="form-group"><label>Username</label><input id="login-user" autocomplete="username"></div>
-        <div class="form-group"><label>Password</label><input id="login-pass" type="password" autocomplete="current-password"></div>
+        <div class="form-group"><label for="login-user">Username</label><input id="login-user" autocomplete="username"></div>
+        <div class="form-group"><label for="login-pass">Password</label><input id="login-pass" type="password" autocomplete="current-password"></div>
         <div id="login-error" class="form-error" style="display:none"></div>
         <button class="btn-primary" onclick="App.doLogin()">Sign In</button>
         ${window.PublicKeyCredential ? `
@@ -131,9 +131,9 @@ Object.assign(App, {
     document.getElementById('app').innerHTML = `
       <div class="auth-page"><div class="auth-card card">
         <h1>Create Account</h1><p>First user becomes admin</p>
-        <div class="form-group"><label>Username</label><input id="reg-user" autocomplete="username"></div>
-        <div class="form-group"><label>Email (optional)</label><input id="reg-email" type="email"></div>
-        <div class="form-group"><label>Password (min 8 chars)</label><input id="reg-pass" type="password" autocomplete="new-password"></div>
+        <div class="form-group"><label for="reg-user">Username</label><input id="reg-user" autocomplete="username"></div>
+        <div class="form-group"><label for="reg-email">Email (optional)</label><input id="reg-email" type="email"></div>
+        <div class="form-group"><label for="reg-pass">Password (min 8 chars)</label><input id="reg-pass" type="password" autocomplete="new-password"></div>
         <div id="reg-error" class="form-error" style="display:none"></div>
         <button class="btn-primary" onclick="App.doRegister()">Register</button>
         <div class="auth-switch">Already have an account? <a href="#login">Sign in</a></div>
@@ -159,7 +159,7 @@ Object.assign(App, {
     document.getElementById('app').innerHTML = `
       <div class="auth-page"><div class="auth-card card">
         <h1>Reset Password</h1><p>Enter your email address to receive a reset link</p>
-        <div class="form-group"><label>Email</label><input id="forgot-email" type="email" autocomplete="email"></div>
+        <div class="form-group"><label for="forgot-email">Email</label><input id="forgot-email" type="email" autocomplete="email"></div>
         <div id="forgot-error" class="form-error" style="display:none"></div>
         <div id="forgot-success" class="form-success" style="display:none"></div>
         <button class="btn-primary" id="forgot-btn" onclick="App.doForgotPassword()">Send Reset Link</button>
@@ -195,8 +195,8 @@ Object.assign(App, {
     document.getElementById('app').innerHTML = `
       <div class="auth-page"><div class="auth-card card">
         <h1>Set New Password</h1><p>Enter your new password below</p>
-        <div class="form-group"><label>New Password (min 8 chars)</label><input id="reset-pass" type="password" autocomplete="new-password"></div>
-        <div class="form-group"><label>Confirm Password</label><input id="reset-pass-confirm" type="password" autocomplete="new-password"></div>
+        <div class="form-group"><label for="reset-pass">New Password (min 8 chars)</label><input id="reset-pass" type="password" autocomplete="new-password"></div>
+        <div class="form-group"><label for="reset-pass-confirm">Confirm Password</label><input id="reset-pass-confirm" type="password" autocomplete="new-password"></div>
         <div id="reset-error" class="form-error" style="display:none"></div>
         <div id="reset-success" class="form-success" style="display:none"></div>
         <button class="btn-primary" id="reset-btn" onclick="App.doResetPassword('${token}')">Reset Password</button>
@@ -245,9 +245,9 @@ Object.assign(App, {
         <div class="auth-page"><div class="auth-card card">
           <h1>Accept Invitation</h1>
           <p>You've been invited as a <strong>${this.esc(invite.role)}</strong>.</p>
-          <div class="form-group"><label>Email</label><input value="${this.esc(invite.email)}" disabled></div>
-          <div class="form-group"><label>Username</label><input id="invite-user" autocomplete="username"></div>
-          <div class="form-group"><label>Password (min 8 chars)</label><input id="invite-pass" type="password" autocomplete="new-password"></div>
+          <div class="form-group"><label for="invite-email">Email</label><input id="invite-email" value="${this.esc(invite.email)}" disabled></div>
+          <div class="form-group"><label for="invite-user">Username</label><input id="invite-user" autocomplete="username"></div>
+          <div class="form-group"><label for="invite-pass">Password (min 8 chars)</label><input id="invite-pass" type="password" autocomplete="new-password"></div>
           <div id="invite-error" class="form-error" style="display:none"></div>
           <button class="btn-primary" onclick="App.doAcceptInvite('${token}')">Create Account</button>
           <div class="auth-switch">Already have an account? <a href="#login">Sign in</a></div>
