@@ -334,6 +334,22 @@ const App = {
     this._modalReturnFocus = null;
   },
 
+  // ─── Empty state ───
+  // Returns standardized markup for empty list/section UIs. Use everywhere
+  // a list, table, or section would otherwise show a bare "No X" message.
+  // - icon: HTML entity or short text (e.g. '&#127760;'). Defaults to globe.
+  // - title: short headline. Optional.
+  // - description: explanatory line. Optional.
+  // - ctaHtml: pre-rendered button/link HTML for an action. Optional.
+  emptyState({ icon = '&#128194;', title = '', description = '', ctaHtml = '' } = {}) {
+    return `<div class="empty-state">
+      <div class="empty-icon" aria-hidden="true">${icon}</div>
+      ${title ? `<h3>${this.esc(title)}</h3>` : ''}
+      ${description ? `<p>${this.esc(description)}</p>` : ''}
+      ${ctaHtml || ''}
+    </div>`;
+  },
+
   // ─── Drawer ───
   openDrawer(content) {
     const drawer = document.getElementById('drawer');

@@ -17,8 +17,14 @@ Object.assign(App, {
       if (!el) return;
 
       if (data.total_domains === 0) {
-        el.innerHTML = `<div class="empty-state"><div class="empty-icon">&#127760;</div><h3>No domains configured</h3><p>Add your first domain to start monitoring DNS records.</p>
-          ${isAdmin ? '<button class="btn-primary" onclick="App.showAddDomain()">+ Add Domain</button>' : '<p>Ask an admin to add domains.</p>'}</div>`;
+        el.innerHTML = this.emptyState({
+          icon: '&#127760;',
+          title: 'No domains configured',
+          description: 'Add your first domain to start monitoring DNS records.',
+          ctaHtml: isAdmin
+            ? '<button class="btn-primary" onclick="App.showAddDomain()">+ Add Domain</button>'
+            : '<p>Ask an admin to add domains.</p>',
+        });
         return;
       }
 
@@ -29,11 +35,11 @@ Object.assign(App, {
         ${data.expiring_certs && data.expiring_certs.length > 0 ? `<div class="stat-card card clickable" role="link" tabindex="0" onclick="document.getElementById('expiring-certs-section')?.scrollIntoView({behavior:'smooth'})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('expiring-certs-section')?.scrollIntoView({behavior:'smooth'})}" aria-label="Jump to expiring certificates list"><div class="stat-value" style="color:var(--status-warning, orange)">${data.expiring_certs.length}</div><div class="stat-label">Expiring Certs</div></div>` : ''}
       </div>`;
 
-      // Worker health indicator
-      html += `<div id="worker-health" style="margin-bottom:16px"></div>`;
+      // Worker health indicator (skeleton until loadWorkerHealth resolves)
+      html += `<div id="worker-health" style="margin-bottom:16px"><div class="skeleton skeleton-card" style="height:54px"></div></div>`;
 
-      // Cloudflare Tunnel health
-      html += `<div id="tunnel-health" style="margin-bottom:16px"></div>`;
+      // Cloudflare Tunnel health (skeleton until loadTunnelHealth resolves)
+      html += `<div id="tunnel-health" style="margin-bottom:16px"><div class="skeleton skeleton-card" style="height:54px"></div></div>`;
 
       // IPv6 connectivity warning
       if (data.ipv6_available === false) {
@@ -123,14 +129,23 @@ Object.assign(App, {
         label = status.staleness_seconds > 300 ? 'Offline' : 'Stale';
       }
       container.innerHTML = `<div class="card clickable" role="link" tabindex="0" style="display:flex;align-items:center;gap:12px;padding:12px 16px" onclick="App.navigate('settings')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('settings')}" aria-label="Open Settings">
-        <div style="width:10px;height:10px;border-radius:50%;background:${color}"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:${color}" aria-hidden="true"></div>
         <div>
           <div style="font-weight:600;font-size:14px">Worker ${label}</div>
           <div style="font-size:12px;color:var(--text-muted)">Last heartbeat: ${status.last_heartbeat ? this.timeAgo(status.last_heartbeat) : 'Never'}</div>
         </div>
       </div>`;
     } catch (e) {
-      // Worker status endpoint may not exist, silently ignore
+      // Surface failures instead of swallowing — distinguishes "broken" from
+      // "still loading" for the user.
+      container.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-left:3px solid var(--status-dead)" role="alert">
+        <div style="font-size:18px" aria-hidden="true">&#9888;</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">Worker status unavailable</div>
+          <div style="font-size:12px;color:var(--text-muted)">${this.esc(e.message || 'Could not reach the worker status endpoint')}</div>
+        </div>
+        <button class="btn-sm btn-secondary" onclick="App.loadWorkerHealth()">Retry</button>
+      </div>`;
     }
   },
 
@@ -139,7 +154,7 @@ Object.assign(App, {
     if (!container) return;
     try {
       const data = await this.api('/tunnels/summary');
-      if (!data || data.total === 0) return;
+      if (!data || data.total === 0) { container.innerHTML = ''; return; }
       let color = 'var(--status-alive)';
       const parts = [];
       if (data.healthy > 0) parts.push(`${data.healthy} healthy`);
@@ -154,14 +169,21 @@ Object.assign(App, {
       // problem records faster.
       const target = data.down > 0 ? 'domains?status=dead' : 'domains';
       container.innerHTML = `<div class="card clickable" role="link" tabindex="0" style="display:flex;align-items:center;gap:12px;padding:12px 16px" onclick="App.navigate('${target}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('${target}')}" aria-label="View tunnel-related records">
-        <div style="width:10px;height:10px;border-radius:50%;background:${color}"></div>
+        <div style="width:10px;height:10px;border-radius:50%;background:${color}" aria-hidden="true"></div>
         <div>
           <div style="font-weight:600;font-size:14px">Cloudflare Tunnels (${data.total})</div>
           <div style="font-size:12px;color:var(--text-muted)">${parts.join(', ')}</div>
         </div>
       </div>`;
     } catch (e) {
-      // Tunnel endpoint may not exist yet, silently ignore
+      container.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-left:3px solid var(--status-dead)" role="alert">
+        <div style="font-size:18px" aria-hidden="true">&#9888;</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:14px">Tunnel summary unavailable</div>
+          <div style="font-size:12px;color:var(--text-muted)">${this.esc(e.message || 'Could not load Cloudflare tunnel status')}</div>
+        </div>
+        <button class="btn-sm btn-secondary" onclick="App.loadTunnelHealth()">Retry</button>
+      </div>`;
     }
   },
 

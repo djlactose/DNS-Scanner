@@ -95,8 +95,14 @@ Object.assign(App, {
     }
 
     if (filtered.length === 0) {
-      el.innerHTML = '<div class="empty-state"><div class="empty-icon">&#127760;</div><p>No domains found</p>' +
-        (this.user?.role === 'admin' ? '<button class="btn-primary" onclick="App.showAddDomain()">Add your first domain</button>' : '') + '</div>';
+      el.innerHTML = this.emptyState({
+        icon: '&#127760;',
+        title: 'No domains found',
+        description: 'Try adjusting the filters above.',
+        ctaHtml: this.user?.role === 'admin'
+          ? '<button class="btn-primary" onclick="App.showAddDomain()">+ Add a Domain</button>'
+          : '',
+      });
       return;
     }
 
