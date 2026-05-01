@@ -43,6 +43,15 @@ Object.assign(App, {
       this._domains = await this.api('/domains');
       // Populate tag filter
       this.populateTagFilter();
+      // Apply deep-link filter from query string (e.g. #domains?status=dead)
+      const wantedStatus = this.routeParams?.status;
+      if (wantedStatus) {
+        const select = document.getElementById('domain-filter');
+        if (select) {
+          const allowed = Array.from(select.options).map(o => o.value);
+          if (allowed.includes(wantedStatus)) select.value = wantedStatus;
+        }
+      }
       this.filterDomains();
     } catch (e) { this.toast(e.message, 'error'); }
   },
@@ -586,10 +595,21 @@ Object.assign(App, {
   },
 
   async showRecordDetail(recordId) {
-    const record = this._currentRecords?.find(r => r.id === recordId);
-    if (!record) return;
+    // Try the in-page cache first (domain-detail context); otherwise fetch the
+    // record so the drawer can be opened from anywhere (e.g. dashboard alerts).
+    let record = this._currentRecords?.find(r => r.id === recordId);
+    let domain = this._currentDomain;
+    if (!record) {
+      try {
+        record = await this.api(`/records/${recordId}`);
+      } catch (e) {
+        this.toast(`Could not load record: ${e.message}`, 'error');
+        return;
+      }
+      domain = { id: record.parent_domain_id, domain: record.parent_domain };
+    }
+    if (!record || !domain) return;
 
-    const domain = this._currentDomain;
     const fullName = record.name === '@' ? domain.domain : `${record.name}.${domain.domain}`;
     const h = record.latest_health || {};
 

@@ -329,6 +329,33 @@ router.get('/domains/:id/records', requireAuth, validateId, async (req, res) => 
   }
 });
 
+// ─── Single record (with health + tunnel + parent domain) ───
+// Lets the record-detail drawer be opened from anywhere (e.g. dashboard
+// alert cards) without first loading the parent domain's record list.
+router.get('/records/:id', requireAuth, validateId, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT dr.*,
+        d.id AS parent_domain_id, d.domain AS parent_domain,
+        (SELECT row_to_json(hc) FROM (
+          SELECT status, status_code, response_ms, error_message, check_method, ports_open, ssl_valid, ssl_expires_at, ssl_error, propagation_results, tunnel_status, checked_at
+          FROM health_checks WHERE record_id = dr.id ORDER BY checked_at DESC LIMIT 1
+        ) hc) AS latest_health,
+        (SELECT ct.tunnel_id FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) AS tunnel_uuid,
+        (SELECT ct.status FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) AS tunnel_status,
+        (SELECT ct.tunnel_name FROM dns_record_tunnels drt JOIN cloudflare_tunnels ct ON ct.id = drt.tunnel_id WHERE drt.record_id = dr.id LIMIT 1) AS tunnel_name
+      FROM dns_records dr
+      JOIN domains d ON d.id = dr.domain_id
+      WHERE dr.id = $1 AND dr.removed_at IS NULL
+    `, [req.params.id]);
+    if (!result.rows.length) return res.status(404).json({ error: 'Record not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[RECORDS] Single fetch error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch record' });
+  }
+});
+
 // ─── Health check history ───
 router.get('/records/:id/history', requireAuth, validateId, async (req, res) => {
   try {

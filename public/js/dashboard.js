@@ -23,10 +23,10 @@ Object.assign(App, {
       }
 
       let html = `<div class="card-grid">
-        <div class="stat-card card"><div class="stat-value">${data.total_domains}</div><div class="stat-label">Domains Monitored</div></div>
-        <div class="stat-card card"><div class="stat-value" style="color:var(--status-alive)">${data.alive_records}</div><div class="stat-label">Alive Records</div></div>
-        <div class="stat-card card ${deadCount > 0 ? 'dead' : ''}"><div class="stat-value">${deadCount}</div><div class="stat-label">Dead Records</div></div>
-        ${data.expiring_certs && data.expiring_certs.length > 0 ? `<div class="stat-card card"><div class="stat-value" style="color:var(--status-warning, orange)">${data.expiring_certs.length}</div><div class="stat-label">Expiring Certs</div></div>` : ''}
+        <div class="stat-card card clickable" role="link" tabindex="0" onclick="App.navigate('domains')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('domains')}" aria-label="View all monitored domains"><div class="stat-value">${data.total_domains}</div><div class="stat-label">Domains Monitored</div></div>
+        <div class="stat-card card clickable" role="link" tabindex="0" onclick="App.navigate('domains?status=healthy')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('domains?status=healthy')}" aria-label="View healthy domains"><div class="stat-value" style="color:var(--status-alive)">${data.alive_records}</div><div class="stat-label">Alive Records</div></div>
+        <div class="stat-card card clickable ${deadCount > 0 ? 'dead' : ''}" role="link" tabindex="0" onclick="App.navigate('domains?status=dead')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('domains?status=dead')}" aria-label="View domains with dead records"><div class="stat-value">${deadCount}</div><div class="stat-label">Dead Records</div></div>
+        ${data.expiring_certs && data.expiring_certs.length > 0 ? `<div class="stat-card card clickable" role="link" tabindex="0" onclick="document.getElementById('expiring-certs-section')?.scrollIntoView({behavior:'smooth'})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();document.getElementById('expiring-certs-section')?.scrollIntoView({behavior:'smooth'})}" aria-label="Jump to expiring certificates list"><div class="stat-value" style="color:var(--status-warning, orange)">${data.expiring_certs.length}</div><div class="stat-label">Expiring Certs</div></div>` : ''}
       </div>`;
 
       // Worker health indicator
@@ -50,14 +50,16 @@ Object.assign(App, {
         html += `<div class="section-header">Dead Records Requiring Attention</div>`;
         for (const r of data.dead_records) {
           const isTakeover = r.status === 'takeover_risk';
-          html += `<div class="alert-card ${isTakeover ? 'takeover' : ''}">
+          // Clicking the card body opens the record-detail drawer in place;
+          // explicit buttons stop propagation so they keep their own behavior.
+          html += `<div class="alert-card clickable ${isTakeover ? 'takeover' : ''}" role="button" tabindex="0" onclick="App.showRecordDetail(${r.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showRecordDetail(${r.id})}" aria-label="Open detail for ${this.esc(r.record_type)} record">
             <div class="alert-icon">${isTakeover ? '&#9888;' : '&#10060;'}</div>
             <div class="alert-body">
               <div class="alert-title">${this.esc(r.name === '@' ? r.domain : r.name + '.' + r.domain)} &middot; ${this.esc(r.record_type)} &middot; <span class="value-text">${this.esc(r.value)}</span></div>
               <div class="alert-detail">${isTakeover ? 'Potential subdomain takeover risk!' : this.esc(r.error_message || 'No response on any port')}</div>
               <div class="alert-actions">
-                <button class="btn-sm btn-secondary" onclick="App.navigate('domains/${r.domain_id}')">View</button>
-                <button class="btn-sm btn-secondary" onclick="App.dismissRecord(${r.id})">Dismiss</button>
+                <button class="btn-sm btn-secondary" onclick="event.stopPropagation();App.navigate('domains/${r.domain_id}')">Open Domain</button>
+                <button class="btn-sm btn-secondary" onclick="event.stopPropagation();App.dismissRecord(${r.id})">Dismiss</button>
               </div>
             </div>
           </div>`;
@@ -67,18 +69,18 @@ Object.assign(App, {
       }
 
       if (data.expiring_certs && data.expiring_certs.length > 0) {
-        html += `<div class="section-header">Expiring SSL Certificates</div>`;
+        html += `<div class="section-header" id="expiring-certs-section">Expiring SSL Certificates</div>`;
         for (const c of data.expiring_certs) {
           const daysUntil = Math.ceil((new Date(c.ssl_expires_at) - Date.now()) / 86400000);
           const urgency = daysUntil <= 7 ? 'var(--status-dead)' : daysUntil <= 14 ? 'var(--status-warning, orange)' : 'var(--accent)';
           const fqdn = c.name === '@' ? c.domain : `${c.name}.${c.domain}`;
-          html += `<div class="alert-card" style="border-left-color:${urgency}">
+          html += `<div class="alert-card clickable" role="button" tabindex="0" style="border-left-color:${urgency}" onclick="App.showRecordDetail(${c.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showRecordDetail(${c.id})}" aria-label="Open detail for ${this.esc(fqdn)} certificate">
             <div class="alert-icon" style="color:${urgency}">&#128274;</div>
             <div class="alert-body">
               <div class="alert-title">${this.esc(fqdn)} &middot; ${this.esc(c.record_type)}</div>
               <div class="alert-detail">Certificate expires in ${daysUntil} day${daysUntil !== 1 ? 's' : ''} (${new Date(c.ssl_expires_at).toLocaleDateString()})</div>
               <div class="alert-actions">
-                <button class="btn-sm btn-secondary" onclick="App.navigate('domains/${c.domain_id}')">View</button>
+                <button class="btn-sm btn-secondary" onclick="event.stopPropagation();App.navigate('domains/${c.domain_id}')">Open Domain</button>
               </div>
             </div>
           </div>`;
@@ -88,7 +90,10 @@ Object.assign(App, {
       if (data.recent_changes && data.recent_changes.length > 0) {
         html += `<div class="section-header">Recent DNS Changes</div>`;
         for (const c of data.recent_changes.slice(0, 10)) {
-          html += `<div class="alert-card" style="border-left-color:var(--accent)">
+          // record_id may be null if the original record was deleted; only make
+          // the row clickable when we have a target.
+          const clickable = c.record_id ? `clickable" role="button" tabindex="0" onclick="App.showRecordDetail(${c.record_id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.showRecordDetail(${c.record_id})}" aria-label="Open record detail` : '';
+          html += `<div class="alert-card ${clickable}" style="border-left-color:var(--accent)">
             <div class="alert-icon" style="color:var(--accent)">&#8644;</div>
             <div class="alert-body">
               <div class="alert-title">${this.esc(c.record_type)} ${this.esc(c.name)}.${this.esc(c.domain)}</div>
@@ -117,7 +122,7 @@ Object.assign(App, {
         color = status.staleness_seconds > 300 ? 'var(--status-dead)' : 'var(--status-warning, orange)';
         label = status.staleness_seconds > 300 ? 'Offline' : 'Stale';
       }
-      container.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+      container.innerHTML = `<div class="card clickable" role="link" tabindex="0" style="display:flex;align-items:center;gap:12px;padding:12px 16px" onclick="App.navigate('settings')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('settings')}" aria-label="Open Settings">
         <div style="width:10px;height:10px;border-radius:50%;background:${color}"></div>
         <div>
           <div style="font-weight:600;font-size:14px">Worker ${label}</div>
@@ -136,7 +141,6 @@ Object.assign(App, {
       const data = await this.api('/tunnels/summary');
       if (!data || data.total === 0) return;
       let color = 'var(--status-alive)';
-      let label = `${data.healthy} healthy`;
       const parts = [];
       if (data.healthy > 0) parts.push(`${data.healthy} healthy`);
       if (data.degraded > 0) parts.push(`${data.degraded} degraded`);
@@ -145,7 +149,11 @@ Object.assign(App, {
       if (data.down > 0) color = 'var(--status-dead)';
       else if (data.degraded > 0) color = 'var(--status-warning, orange)';
       else if (data.unknown > 0 && data.healthy === 0) color = 'var(--text-muted)';
-      container.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+      // The whole card navigates to the domains list. If at least one tunnel
+      // is down, route to dead-records filter so the user lands on the actual
+      // problem records faster.
+      const target = data.down > 0 ? 'domains?status=dead' : 'domains';
+      container.innerHTML = `<div class="card clickable" role="link" tabindex="0" style="display:flex;align-items:center;gap:12px;padding:12px 16px" onclick="App.navigate('${target}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();App.navigate('${target}')}" aria-label="View tunnel-related records">
         <div style="width:10px;height:10px;border-radius:50%;background:${color}"></div>
         <div>
           <div style="font-weight:600;font-size:14px">Cloudflare Tunnels (${data.total})</div>

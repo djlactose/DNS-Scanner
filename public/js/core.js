@@ -100,7 +100,13 @@ const App = {
   },
 
   async route() {
-    const hash = window.location.hash.slice(1) || 'dashboard';
+    const rawHash = window.location.hash.slice(1) || 'dashboard';
+    // Split off ?key=value query string from the hash so deep links like
+    // #domains?status=dead can pre-filter the destination view.
+    const queryIdx = rawHash.indexOf('?');
+    const hash = queryIdx >= 0 ? rawHash.slice(0, queryIdx) : rawHash;
+    const queryString = queryIdx >= 0 ? rawHash.slice(queryIdx + 1) : '';
+    this.routeParams = Object.fromEntries(new URLSearchParams(queryString));
     const parts = hash.split('/');
     this.currentRoute = parts[0];
 
