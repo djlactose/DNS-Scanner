@@ -306,6 +306,10 @@ const App = {
         await onConfirm();
         this.closeModal();
       } catch (e) {
+        // Sentinel for handlers that need to keep the modal open (e.g. show
+        // a generated value the user must copy first) without surfacing as
+        // an error.
+        if (e.message === '__keep_open__') return;
         const errEl = document.getElementById('modal-error');
         if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
       }
@@ -332,6 +336,26 @@ const App = {
       this._modalReturnFocus.focus();
     }
     this._modalReturnFocus = null;
+  },
+
+  // ─── Password show/hide toggle ───
+  // Wraps a password input + toggle button into a single unit. Use as the
+  // input replacement, e.g. ${App.passwordInput('set-newpass', { autocomplete: 'new-password' })}.
+  passwordInput(id, opts = {}) {
+    const ac = opts.autocomplete ? ` autocomplete="${opts.autocomplete}"` : '';
+    const ph = opts.placeholder ? ` placeholder="${this.esc(opts.placeholder)}"` : '';
+    return `<div class="pwd-input">
+      <input id="${id}" type="password"${ac}${ph}>
+      <button type="button" class="pwd-toggle btn-icon" aria-label="Show password" onclick="App.togglePassword('${id}', this)">&#128065;</button>
+    </div>`;
+  },
+  togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const showing = input.type === 'password';
+    input.type = showing ? 'text' : 'password';
+    btn.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+    btn.innerHTML = showing ? '&#128064;' : '&#128065;';
   },
 
   // ─── Empty state ───

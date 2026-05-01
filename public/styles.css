@@ -455,7 +455,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .skeleton-card { height: 80px; margin-bottom: 8px; }
 
 /* Settings tabs */
-.settings-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; }
+.settings-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; align-items: stretch; }
+.settings-tab-group { display: flex; gap: 0; }
+.settings-tab-divider {
+  display: inline-block;
+  width: 1px;
+  background: var(--border);
+  margin: 8px 12px;
+  align-self: stretch;
+}
 .settings-tab {
   padding: 10px 20px;
   font-size: 14px;
@@ -623,6 +631,22 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .bottom-nav a.active { color: var(--accent); font-weight: 600; }
 .bottom-nav a svg { width: 22px; height: 22px; }
+
+/* Password input with show/hide toggle */
+.pwd-input { position: relative; }
+.pwd-input input { padding-right: 40px; }
+.pwd-input .pwd-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
 
 /* Sortable column headers in records table */
 .records-table th.sortable { cursor: pointer; user-select: none; }

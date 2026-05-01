@@ -3,23 +3,46 @@ Object.assign(App, {
     const isAdmin = this.user?.role === 'admin';
     this.renderLayout(`
       <div class="page-header"><h2>Settings</h2></div>
-      <div class="settings-tabs">
-        <button class="settings-tab active" onclick="App.showSettingsTab('profile', this)">Profile</button>
-        <button class="settings-tab" onclick="App.showSettingsTab('notifications', this)">Notifications</button>
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'system\', this)">System</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'smtp\', this)">SMTP</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'webhooks\', this)">Webhooks</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'auth\', this)">Authentication</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'users\', this)">Users</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'tags\', this)">Tags</button>' : ''}
-        ${isAdmin ? '<button class="settings-tab" onclick="App.showSettingsTab(\'audit\', this)">Audit Log</button>' : ''}
+      <div class="settings-tabs" role="tablist">
+        <span class="settings-tab-group" aria-label="Account">
+          <button class="settings-tab active" role="tab" onclick="App.showSettingsTab('profile', this)">Profile</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('notifications', this)">Notifications</button>
+        </span>
+        ${isAdmin ? `<span class="settings-tab-divider" aria-hidden="true"></span>
+        <span class="settings-tab-group" aria-label="Integrations">
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('system', this)">System</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('smtp', this)">SMTP</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('webhooks', this)">Webhooks</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('auth', this)">Authentication</button>
+        </span>
+        <span class="settings-tab-divider" aria-hidden="true"></span>
+        <span class="settings-tab-group" aria-label="Administration">
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('users', this)">Users</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('tags', this)">Tags</button>
+          <button class="settings-tab" role="tab" onclick="App.showSettingsTab('audit', this)">Audit Log</button>
+        </span>` : ''}
       </div>
       <div id="settings-content"></div>
     `);
+    this._settingsDirty = false;
+    // Narrow dirty-tracking: only text/number/email/password and textarea
+    // edits count as unsaved. Toggle and select changes typically save
+    // automatically (notifications, passkey mode, etc.) so flagging them
+    // would trigger false-positive "discard?" prompts.
+    const content = document.getElementById('settings-content');
+    if (content) {
+      content.addEventListener('input', (e) => {
+        if (e.target.matches('input[type="text"], input[type="number"], input[type="email"], input[type="password"], input:not([type]), textarea')) {
+          this._settingsDirty = true;
+        }
+      });
+    }
     this.showSettingsTab('profile');
   },
 
   async showSettingsTab(tab, el) {
+    if (this._settingsDirty && !confirm('You have unsaved changes on this tab. Discard them and continue?')) return;
+    this._settingsDirty = false;
     document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
     if (el) el.classList.add('active');
     else document.querySelector(`.settings-tab`)?.classList.add('active');
@@ -53,12 +76,17 @@ Object.assign(App, {
                 </div>`;
               } else {
                 const fid = `sys-${s.key}`;
+                const ph = s.sensitive ? (s.hasValue ? 'Leave blank to keep current' : 'Not set') : '';
+                const inputHtml = s.sensitive
+                  ? `<div class="pwd-input">
+                       <input id="${fid}" type="password" class="sys-setting" data-key="${s.key}" value="" placeholder="${this.esc(ph)}">
+                       <button type="button" class="pwd-toggle btn-icon" aria-label="Show value" onclick="App.togglePassword('${fid}', this)">&#128065;</button>
+                     </div>`
+                  : `<input id="${fid}" type="text" class="sys-setting" data-key="${s.key}" value="${this.esc(s.value || '')}" placeholder="">`;
                 shtml += `<div class="form-group" style="margin-bottom:12px">
                   <label for="${fid}">${this.esc(s.label)}${s.sensitive ? ' (encrypted)' : ''}</label>
                   ${s.description ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">${this.esc(s.description)}</div>` : ''}
-                  <input id="${fid}" type="${s.sensitive ? 'password' : 'text'}" class="sys-setting" data-key="${s.key}"
-                    value="${s.sensitive ? '' : this.esc(s.value || '')}"
-                    placeholder="${s.sensitive ? (s.hasValue ? 'Leave blank to keep current' : 'Not set') : ''}">
+                  ${inputHtml}
                 </div>`;
               }
             }
@@ -77,8 +105,8 @@ Object.assign(App, {
           <div class="form-group"><label for="set-email">Email</label><input id="set-email" value="${this.esc(this.user.email || '')}"></div>
           <button class="btn-primary" onclick="App.updateProfile()">Save</button>
           <h3 style="margin:24px 0 16px">${hasPassword ? 'Change Password' : 'Set Password'}</h3>
-          ${hasPassword ? '<div class="form-group"><label for="set-curpass">Current Password</label><input id="set-curpass" type="password"></div>' : ''}
-          <div class="form-group"><label for="set-newpass">New Password</label><input id="set-newpass" type="password"></div>
+          ${hasPassword ? `<div class="form-group"><label for="set-curpass">Current Password</label>${this.passwordInput('set-curpass', { autocomplete: 'current-password' })}</div>` : ''}
+          <div class="form-group"><label for="set-newpass">New Password</label>${this.passwordInput('set-newpass', { autocomplete: 'new-password' })}</div>
           <button class="btn-primary" onclick="App.changePassword()">${hasPassword ? 'Update Password' : 'Set Password'}</button>
         </div>
         ${window.PublicKeyCredential ? `
@@ -145,7 +173,7 @@ Object.assign(App, {
             <div class="form-group"><label for="smtp-host">Host</label><input id="smtp-host" value="${this.esc(smtp.smtp_host || '')}"></div>
             <div class="form-group"><label for="smtp-port">Port</label><input id="smtp-port" type="number" value="${smtp.smtp_port || 587}"></div>
             <div class="form-group"><label for="smtp-user">Username</label><input id="smtp-user" value="${this.esc(smtp.smtp_user || '')}"></div>
-            <div class="form-group"><label for="smtp-pass">Password (optional)</label><input id="smtp-pass" type="password" placeholder="Leave blank if not required"></div>
+            <div class="form-group"><label for="smtp-pass">Password (optional)</label>${this.passwordInput('smtp-pass', { placeholder: 'Leave blank if not required' })}</div>
             <div class="form-group"><label for="smtp-from">From Address</label><input id="smtp-from" value="${this.esc(smtp.smtp_from || '')}" placeholder="noreply@example.com"></div>
             <label class="toggle" style="margin-bottom:16px"><input type="checkbox" id="smtp-secure" ${smtp.smtp_secure !== false ? 'checked' : ''}><div class="toggle-track"></div>Use TLS</label>
             <div style="display:flex;gap:8px"><button class="btn-primary" onclick="App.saveSMTP()">Save</button><button class="btn-secondary" onclick="App.testEmail()">Test</button></div>
@@ -261,6 +289,7 @@ Object.assign(App, {
       await this.api(`/users/${this.user.id}`, { method: 'PUT', body: { email: document.getElementById('set-email').value } });
       this.user = await this.api('/auth/me');
       this.toast('Profile updated', 'success');
+      this._settingsDirty = false;
     } catch (e) { this.toast(e.message, 'error'); }
   },
 
@@ -274,6 +303,7 @@ Object.assign(App, {
       this.toast('Password updated', 'success');
       if (curPassEl) curPassEl.value = '';
       document.getElementById('set-newpass').value = '';
+      this._settingsDirty = false;
     } catch (e) { this.toast(e.message, 'error'); }
   },
 
@@ -308,24 +338,34 @@ Object.assign(App, {
         options.excludeCredentials = options.excludeCredentials.map(c => ({ ...c, id: this.base64urlToBuffer(c.id) }));
       }
       const credential = await navigator.credentials.create({ publicKey: options });
-      const name = prompt('Name this passkey (e.g., "MacBook Touch ID", "Phone"):', 'My Passkey');
-      if (!name) return;
-      await this.api('/auth/passkey/register-verify', { method: 'POST', body: {
-        name,
-        credential: {
-          id: credential.id,
-          rawId: this.bufferToBase64url(credential.rawId),
-          type: credential.type,
-          response: {
-            attestationObject: this.bufferToBase64url(credential.response.attestationObject),
-            clientDataJSON: this.bufferToBase64url(credential.response.clientDataJSON),
-            transports: credential.response.getTransports ? credential.response.getTransports() : [],
+      // Ask for the passkey name via the standard modal so it matches the
+      // app's design language and is keyboard-accessible (Escape, focus
+      // restore, focus-visible — none of which prompt() supports).
+      this.showModal('Name this passkey', `
+        <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Give this passkey a name so you can recognize it later.</p>
+        <div class="form-group"><label for="modal-passkey-name">Name</label>
+          <input id="modal-passkey-name" placeholder="e.g., MacBook Touch ID" value="My Passkey">
+        </div>
+      `, async () => {
+        const name = document.getElementById('modal-passkey-name').value.trim();
+        if (!name) throw new Error('Name is required');
+        await this.api('/auth/passkey/register-verify', { method: 'POST', body: {
+          name,
+          credential: {
+            id: credential.id,
+            rawId: this.bufferToBase64url(credential.rawId),
+            type: credential.type,
+            response: {
+              attestationObject: this.bufferToBase64url(credential.response.attestationObject),
+              clientDataJSON: this.bufferToBase64url(credential.response.clientDataJSON),
+              transports: credential.response.getTransports ? credential.response.getTransports() : [],
+            },
           },
-        },
-      }});
-      this.user = await this.api('/auth/me');
-      this.toast('Passkey registered', 'success');
-      this.showSettingsTab('profile');
+        }});
+        this.user = await this.api('/auth/me');
+        this.toast('Passkey registered', 'success');
+        this.showSettingsTab('profile');
+      }, 'Save');
     } catch (e) {
       if (e.name !== 'NotAllowedError') this.toast(e.message || 'Failed to register passkey', 'error');
     }
@@ -414,10 +454,10 @@ Object.assign(App, {
     this.showModal('Generate API Key', `
       <div class="form-group"><label for="modal-key-name">Key Name</label><input id="modal-key-name" placeholder="e.g., CI/CD Pipeline"></div>
       <div id="generated-key-display" style="display:none;margin-top:12px">
-        <label style="font-weight:600;margin-bottom:4px;display:block">Your API Key (copy now - it won't be shown again):</label>
+        <label style="font-weight:600;margin-bottom:4px;display:block">Your API Key (copy now &mdash; it won't be shown again):</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input id="generated-key-value" readonly style="font-family:monospace;font-size:12px;flex:1">
-          <button class="btn-sm btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('generated-key-value').value); App.toast('Copied!', 'success')">Copy</button>
+          <input id="generated-key-value" readonly style="font-family:monospace;font-size:12px;flex:1" aria-label="Generated API key">
+          <button class="btn-primary btn-sm" onclick="App.copyApiKeyAndClose()">Copy &amp; Done</button>
         </div>
       </div>
     `, async () => {
@@ -425,18 +465,39 @@ Object.assign(App, {
       if (!name) throw new Error('Name is required');
       const result = await this.api('/auth/api-keys', { method: 'POST', body: { name } });
       if (result.key) {
+        // Switch the modal from "create" to "show the generated key" mode.
+        // Hide the original Generate button so the user only sees Copy & Done.
         const display = document.getElementById('generated-key-display');
         const input = document.getElementById('generated-key-value');
+        const nameInput = document.getElementById('modal-key-name');
+        const confirmBtn = document.getElementById('modal-confirm');
         if (display && input) {
           input.value = result.key;
           display.style.display = 'block';
-          document.getElementById('modal-key-name').disabled = true;
+          nameInput.disabled = true;
+          if (confirmBtn) confirmBtn.style.display = 'none';
+          input.focus();
+          input.select();
         }
-        // Don't close the modal - let the user copy the key first
         throw new Error('__keep_open__');
       }
       this.loadApiKeys();
     }, 'Generate');
+  },
+
+  async copyApiKeyAndClose() {
+    const input = document.getElementById('generated-key-value');
+    if (input && input.value) {
+      try {
+        await navigator.clipboard.writeText(input.value);
+        this.toast('API key copied to clipboard', 'success');
+      } catch (e) {
+        this.toast('Could not copy automatically &mdash; select the value to copy manually', 'warning');
+        return;
+      }
+    }
+    this.closeModal();
+    this.loadApiKeys();
   },
 
   async deleteApiKey(id) {
@@ -526,6 +587,7 @@ Object.assign(App, {
     try {
       await this.api('/settings/system', { method: 'PUT', body });
       this.toast('System settings saved', 'success');
+      this._settingsDirty = false;
     } catch (e) { this.toast(e.message, 'error'); }
   },
 
