@@ -371,7 +371,7 @@ Object.assign(App, {
         </div>
         <div class="card" style="overflow-x:auto">
           <table class="records-table">
-            <thead><tr><th onclick="App.sortRecords('record_type')">Type</th><th onclick="App.sortRecords('name')">Name</th><th>Value</th><th onclick="App.sortRecords('status')">Status</th><th>Response</th></tr></thead>
+            <thead id="records-thead"></thead>
             <tbody id="records-tbody"></tbody>
           </table>
         </div>
@@ -418,7 +418,27 @@ Object.assign(App, {
 
   renderRecordsTable() {
     const tbody = document.getElementById('records-tbody');
+    const thead = document.getElementById('records-thead');
     if (!tbody || !this._currentRecords) return;
+
+    if (thead) {
+      // Sort indicator: solid up/down arrow on the active column, faint dash
+      // on other sortable columns so the affordance is visible.
+      const arrow = (field) => {
+        if (this._sortField !== field) return '<span class="sort-indicator inactive" aria-hidden="true">&#8597;</span>';
+        return this._sortDir > 0
+          ? '<span class="sort-indicator" aria-hidden="true">&#9650;</span>'
+          : '<span class="sort-indicator" aria-hidden="true">&#9660;</span>';
+      };
+      const ariaSort = (field) => this._sortField === field ? (this._sortDir > 0 ? 'ascending' : 'descending') : 'none';
+      thead.innerHTML = `<tr>
+        <th aria-sort="${ariaSort('record_type')}" onclick="App.sortRecords('record_type')" class="sortable">Type ${arrow('record_type')}</th>
+        <th aria-sort="${ariaSort('name')}" onclick="App.sortRecords('name')" class="sortable">Name ${arrow('name')}</th>
+        <th>Value</th>
+        <th aria-sort="${ariaSort('status')}" onclick="App.sortRecords('status')" class="sortable">Status ${arrow('status')}</th>
+        <th>Response</th>
+      </tr>`;
+    }
 
     let records = [...this._currentRecords];
     const filter = this._currentFilter;
@@ -446,15 +466,15 @@ Object.assign(App, {
       const tunnelColor = r.tunnel_status === 'healthy' ? '#22c55e' : r.tunnel_status === 'degraded' ? '#f59e0b' : r.tunnel_status === 'down' ? '#ef4444' : 'var(--text-muted)';
 
       return `<tr class="${rowClass}" onclick="App.showRecordDetail(${r.id})">
-        <td><strong>${this.esc(r.record_type)}</strong></td>
-        <td>${this.esc(r.name)}${r.priority ? ` (pri: ${r.priority})` : ''}</td>
-        <td><div class="value-text">${this.esc(r.value)}</div>
+        <td data-label="Type"><strong>${this.esc(r.record_type)}</strong></td>
+        <td data-label="Name">${this.esc(r.name)}${r.priority ? ` (pri: ${r.priority})` : ''}</td>
+        <td data-label="Value"><div class="value-text">${this.esc(r.value)}</div>
           ${portsStr ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${portsStr}</div>` : ''}
           ${sslStr ? `<div style="font-size:12px;color:var(--text-muted)">${sslStr}${h.ssl_expires_at ? ` (exp ${new Date(h.ssl_expires_at).toLocaleDateString()})` : ''}</div>` : ''}
           ${tunnelStr ? `<div style="font-size:12px;color:${tunnelColor};margin-top:2px">${tunnelStr}</div>` : ''}
         </td>
-        <td><span class="status-badge ${status}">${isNew && status !== 'dead' ? 'NEW' : status.replace('_', ' ')}</span></td>
-        <td>${h.response_ms ? `<span class="response-time">${h.response_ms}ms</span>` : '-'}</td>
+        <td data-label="Status"><span class="status-badge ${status}">${isNew && status !== 'dead' ? 'NEW' : status.replace('_', ' ')}</span></td>
+        <td data-label="Response">${h.response_ms ? `<span class="response-time">${h.response_ms}ms</span>` : '-'}</td>
       </tr>`;
     }).join('');
   },
@@ -601,6 +621,30 @@ Object.assign(App, {
     }
   },
 
+  // Map opaque check-method codes to human-readable explanations. Used as
+  // both the displayed text and the title-attr tooltip in the record drawer.
+  _checkMethodLabel(code) {
+    if (!code) return null;
+    const map = {
+      https: { label: 'HTTPS', tip: 'Connected and got a response on port 443 over TLS.' },
+      http: { label: 'HTTP', tip: 'Connected and got a response on port 80.' },
+      icmp: { label: 'ICMP ping', tip: 'Host responded to a ping packet.' },
+      dns_resolve: { label: 'DNS lookup', tip: 'CNAME target failed to resolve via DNS.' },
+      dns_query: { label: 'DNS query', tip: 'Nameserver answered a test query.' },
+      ssrf_blocked: { label: 'SSRF blocked', tip: 'Resolved IP is in a private range; scanning is not allowed.' },
+      ipv6_unavailable: { label: 'No IPv6', tip: 'Host lacks IPv6 connectivity, so the AAAA record cannot be verified.' },
+      cf_tunnel_api: { label: 'Cloudflare Tunnel API', tip: 'Status came directly from the Cloudflare Tunnel API.' },
+      cf_tunnel_no_api: { label: 'Tunnel API unavailable', tip: 'Could not reach the Cloudflare Tunnel API; tunnel state is unknown.' },
+      skipped: { label: 'Skipped', tip: 'This record type is informational and is not health-checked.' },
+      skipped_underscore: { label: 'Skipped (DNS attribute)', tip: 'Underscore-prefixed names like _dmarc and DKIM selectors describe DNS attributes, not endpoints.' },
+      all_failed: { label: 'No response', tip: 'All probes (HTTPS, HTTP, TCP, ICMP) failed.' },
+      error: { label: 'Error', tip: 'Health check raised an unexpected error.' },
+    };
+    if (map[code]) return map[code];
+    if (code.startsWith('tcp:')) return { label: code.toUpperCase(), tip: `TCP connection succeeded on port ${code.slice(4)}.` };
+    return { label: code, tip: '' };
+  },
+
   async showRecordDetail(recordId) {
     // Try the in-page cache first (domain-detail context); otherwise fetch the
     // record so the drawer can be opened from anywhere (e.g. dashboard alerts).
@@ -629,7 +673,7 @@ Object.assign(App, {
         <div class="drawer-section">
           <h4>Record Info</h4>
           <div class="drawer-row"><span class="label">Value</span><span class="value-text">${this.esc(record.value)}</span></div>
-          <div class="drawer-row"><span class="label">TTL</span><span>${record.ttl || '-'}</span></div>
+          <div class="drawer-row"><span class="label" title="DNS time-to-live: how long resolvers are allowed to cache this record (in seconds)">TTL</span><span>${record.ttl ? `${record.ttl}s` : '-'}</span></div>
           ${record.priority ? `<div class="drawer-row"><span class="label">Priority</span><span>${record.priority}</span></div>` : ''}
           <div class="drawer-row"><span class="label">First Seen</span><span>${this.formatDate(record.first_seen)}</span></div>
           <div class="drawer-row"><span class="label">Last Seen</span><span>${this.formatDate(record.last_seen)}</span></div>
@@ -637,8 +681,8 @@ Object.assign(App, {
 
         <div class="drawer-section">
           <h4>Health Status</h4>
-          <div class="drawer-row"><span class="label">Status</span><span class="status-badge ${h.status || 'unknown'}">${(h.status || 'unknown').replace('_', ' ')}</span></div>
-          ${h.check_method ? `<div class="drawer-row"><span class="label">Check Method</span><span>${this.esc(h.check_method)}</span></div>` : ''}
+          <div class="drawer-row"><span class="label">Status</span>${(() => { const s = h.status || 'unknown'; const tips = { alive: 'Last health check succeeded.', dead: 'Three or more consecutive checks have failed.', takeover_risk: 'CNAME points at a service whose target subdomain is unclaimed — anyone could register it and impersonate this hostname.', skipped: 'This record type is informational and not health-checked.', no_ipv6: 'AAAA record cannot be verified because this host lacks IPv6 connectivity.' }; const tip = tips[s] || ''; return `<span class="status-badge ${s}" ${tip ? `title="${this.esc(tip)}"` : ''}>${s.replace('_', ' ')}</span>`; })()}</div>
+          ${h.check_method ? (() => { const cm = this._checkMethodLabel(h.check_method); return `<div class="drawer-row"><span class="label">Check Method</span><span ${cm.tip ? `title="${this.esc(cm.tip)}"` : ''}>${this.esc(cm.label)}</span></div>`; })() : ''}
           ${h.response_ms ? `<div class="drawer-row"><span class="label">Response Time</span><span>${h.response_ms}ms</span></div>` : ''}
           ${h.error_message ? `<div class="drawer-row"><span class="label">Error</span><span style="color:var(--status-dead)">${this.esc(h.error_message)}</span></div>` : ''}
           ${h.status_code ? `<div class="drawer-row"><span class="label">HTTP Status</span><span>${h.status_code}</span></div>` : ''}

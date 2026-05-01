@@ -624,17 +624,52 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .bottom-nav a.active { color: var(--accent); font-weight: 600; }
 .bottom-nav a svg { width: 22px; height: 22px; }
 
+/* Sortable column headers in records table */
+.records-table th.sortable { cursor: pointer; user-select: none; }
+.records-table th.sortable:hover { background: var(--bg-elevated); }
+.records-table th .sort-indicator { font-size: 11px; margin-left: 4px; opacity: 1; }
+.records-table th .sort-indicator.inactive { opacity: 0.35; font-size: 10px; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .sidebar { display: none; }
   .bottom-nav { display: flex; }
   .main-content { margin-left: 0; padding: 16px; padding-bottom: 80px; }
   .drawer { width: 100vw; }
-  .records-table { display: block; overflow-x: auto; }
   .card-grid { grid-template-columns: repeat(3, 1fr); }
   .stat-card .stat-value { font-size: 24px; }
   .search-bar { flex-direction: column; }
   .search-bar input, .search-bar select { max-width: 100%; }
+
+  /* Records table -> stacked cards on phones. Each row becomes its own
+     card; each cell is labeled by its data-label so the column header
+     context isn't lost when the header row is hidden. */
+  .records-table { display: block; }
+  .records-table thead { display: none; }
+  .records-table tbody { display: block; }
+  .records-table tr {
+    display: block;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  .records-table td { display: block; padding: 4px 0; border: 0; }
+  .records-table td[data-label]::before {
+    content: attr(data-label) ":";
+    display: inline-block;
+    min-width: 70px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .records-table td[data-label="Value"] { padding-top: 8px; }
+  .records-table td[data-label="Value"]::before { display: block; margin-bottom: 4px; }
+
+  /* Bulk action bar sits above the bottom nav so they don't stack. */
+  .bulk-bar { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); width: calc(100% - 32px); justify-content: center; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
